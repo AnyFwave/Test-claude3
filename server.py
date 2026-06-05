@@ -25,20 +25,20 @@ from websockets.asyncio.server import ServerConnection
 # ---------------------------------------------------------------------------
 HTML_PATH = pathlib.Path(__file__).parent / "tictactoe.html"
 
-async def process_request(connection, request) -> Optional[tuple]:
+from websockets.http11 import Response as HTTPResponse  # noqa: E402
+
+
+async def process_request(connection, request):
     """Handle HTTP GET / — return the game HTML; all else → WebSocket."""
     if request.path == "/":
         try:
             html = HTML_PATH.read_text(encoding="utf-8")
-            # websockets 12+ Response: (status, headers, body)
-            headers = [
-                ("Content-Type", "text/html; charset=utf-8"),
-            ]
-            body = html.encode("utf-8")
-            return (200, headers, body)
+            headers = [("Content-Type", "text/html; charset=utf-8")]
+            return HTTPResponse(200, "OK", headers, html.encode("utf-8"))
         except Exception:
             logger.warning(f"Failed to serve {HTML_PATH}")
     return None  # fall through → WebSocket handshake
+
 
 # ---------------------------------------------------------------------------
 # Logging
