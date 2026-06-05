@@ -1,0 +1,2812 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tic-Tac-Toe &amp; Gomoku &amp; Chinese Chess</title>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --surface: #1e293b;
+            --cell: #334155;
+            --cell-hover: #475569;
+            --x-color: #38bdf8;
+            --o-color: #f472b6;
+            --text: #e2e8f0;
+            --text-muted: #94a3b8;
+            --accent: #818cf8;
+            --win-glow: rgba(129, 140, 248, 0.35);
+            --radius: 16px;
+            --shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+            --online-color: #10b981;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+            background: var(--bg);
+            font-family: 'Segoe UI', 'Inter', system-ui, -apple-system, sans-serif;
+            color: var(--text);
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+            padding-top: 28px;
+            padding-bottom: 40px;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(148, 163, 184, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(148, 163, 184, 0.03) 1px, transparent 1px);
+            background-size: 60px 60px;
+            pointer-events: none;
+        }
+
+        .container {
+            position: relative;
+            z-index: 1;
+            text-align: center;
+            animation: fadeIn 0.5s ease-out;
+            width: 100%;
+            max-width: 820px;
+            padding: 0 16px;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(12px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ── Mode selector ── */
+        .mode-selector {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            margin-bottom: 14px;
+        }
+
+        .mode-btn {
+            padding: 10px 28px;
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            background: var(--surface);
+            border: 2px solid transparent;
+            border-radius: 9999px;
+            cursor: pointer;
+            transition: all 0.22s;
+            font-family: inherit;
+            letter-spacing: 0.02em;
+        }
+
+        .mode-btn:hover {
+            color: var(--text);
+            background: var(--cell);
+        }
+
+        .mode-btn.active {
+            color: #fff;
+            background: var(--online-color);
+            border-color: var(--online-color);
+            box-shadow: 0 2px 14px rgba(16, 185, 129, 0.35);
+        }
+
+        .mode-btn:active {
+            transform: scale(0.96);
+        }
+
+        /* ── Online status bar ── */
+        .online-status {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            margin-bottom: 14px;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            height: 28px;
+            flex-wrap: wrap;
+        }
+
+        .online-status.hidden {
+            display: none;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .status-dot.connected {
+            background: var(--online-color);
+            box-shadow: 0 0 6px rgba(16, 185, 129, 0.5);
+        }
+
+        .status-dot.disconnected {
+            background: #ef4444;
+            box-shadow: 0 0 6px rgba(239, 68, 68, 0.5);
+        }
+
+        .status-room-id {
+            font-family: monospace;
+            font-weight: 700;
+            color: var(--text);
+        }
+
+        /* ── Lobby panel ── */
+        .lobby-panel {
+            animation: fadeIn 0.3s ease-out;
+            max-width: 440px;
+            margin: 0 auto;
+        }
+
+        .lobby-panel.hidden {
+            display: none;
+        }
+
+        .lobby-section {
+            background: var(--surface);
+            border-radius: var(--radius);
+            padding: 24px;
+            margin-bottom: 16px;
+            box-shadow: var(--shadow);
+        }
+
+        .lobby-section h3 {
+            margin-bottom: 14px;
+            font-size: 1.1rem;
+            color: var(--text);
+        }
+
+        .lobby-section label {
+            display: block;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+            text-align: left;
+        }
+
+        .lobby-section select,
+        .lobby-section input {
+            width: 100%;
+            padding: 10px 14px;
+            font-size: 0.95rem;
+            font-family: inherit;
+            background: var(--cell);
+            color: var(--text);
+            border: 2px solid transparent;
+            border-radius: 10px;
+            margin-bottom: 12px;
+            transition: border-color 0.2s;
+            outline: none;
+        }
+
+        .lobby-section select:focus,
+        .lobby-section input:focus {
+            border-color: var(--accent);
+        }
+
+        .lobby-btn {
+            width: 100%;
+            padding: 11px 0;
+            font-size: 1rem;
+            font-weight: 600;
+            color: #fff;
+            background: var(--accent);
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.15s;
+            font-family: inherit;
+        }
+
+        .lobby-btn:hover {
+            background: #9d8cf8;
+            transform: translateY(-1px);
+        }
+
+        .lobby-btn:active {
+            transform: scale(0.97);
+        }
+
+        .lobby-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .lobby-btn.danger {
+            background: #ef4444;
+            box-shadow: 0 2px 12px rgba(239, 68, 68, 0.3);
+        }
+
+        .lobby-btn.danger:hover {
+            background: #dc2626;
+        }
+
+        /* ── Tab bar ── */
+        .tab-bar {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            margin-bottom: 18px;
+        }
+
+        .tab-bar.hidden {
+            display: none;
+        }
+
+        .tab-btn {
+            padding: 10px 28px;
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            background: var(--surface);
+            border: 2px solid transparent;
+            border-radius: 9999px;
+            cursor: pointer;
+            transition: all 0.22s;
+            font-family: inherit;
+            letter-spacing: 0.02em;
+        }
+
+        .tab-btn:hover {
+            color: var(--text);
+            background: var(--cell);
+        }
+
+        .tab-btn.active {
+            color: #fff;
+            background: var(--accent);
+            border-color: var(--accent);
+            box-shadow: 0 2px 14px rgba(129, 140, 248, 0.35);
+        }
+
+        .tab-btn:active {
+            transform: scale(0.96);
+        }
+
+        /* ── Game panel ── */
+        .game-panel {
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        .game-panel.hidden {
+            display: none;
+        }
+
+        /* ── Board locked overlay (online mode) ── */
+        .game-panel.board-locked .cell:not(.taken) {
+            cursor: not-allowed;
+            opacity: 0.65;
+        }
+        .game-panel.board-locked .cell:not(.taken):hover,
+        .game-panel.board-locked .cell:not(.taken):active {
+            transform: none;
+            background: var(--cell);
+        }
+        .game-panel.board-locked .gomoku-board .cell:not(.taken):hover {
+            background-color: rgba(139, 105, 20, 0);
+        }
+        .game-panel.board-locked .chess-cell:hover {
+            background-color: transparent;
+        }
+
+        /* ── Title ── */
+        h1 {
+            font-size: 2.4rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            margin-bottom: 0.35em;
+            background: linear-gradient(135deg, var(--x-color), var(--o-color));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        /* ── Turn indicator ── */
+        .turn-indicator {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 24px;
+            font-size: 1.15rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            height: 42px;
+            transition: color 0.2s;
+        }
+
+        .turn-indicator .player-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 16px;
+            border-radius: 9999px;
+            background: var(--surface);
+            font-weight: 700;
+            font-size: 1.25rem;
+            transition: all 0.25s;
+            min-width: 90px;
+            justify-content: center;
+            border: 2px solid transparent;
+        }
+
+        .turn-indicator .player-label.active-x {
+            border-color: var(--x-color);
+            color: var(--x-color);
+            box-shadow: 0 0 20px rgba(56, 189, 248, 0.2);
+        }
+
+        .turn-indicator .player-label.active-o {
+            border-color: var(--o-color);
+            color: var(--o-color);
+            box-shadow: 0 0 20px rgba(244, 114, 182, 0.2);
+        }
+
+        .turn-indicator .arrow {
+            font-size: 1.4rem;
+            opacity: 0.5;
+        }
+
+        /* ── Board (base) ── */
+        .board {
+            display: inline-grid;
+            background: var(--surface);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+        }
+
+        /* TTT board */
+        .board.ttt-board {
+            grid-template-columns: repeat(3, 1fr);
+            grid-template-rows: repeat(3, 1fr);
+            gap: 8px;
+            padding: 12px;
+        }
+
+        /* Gomoku board — intersection-based (stones on line crossings) */
+        .board.gomoku-board {
+            grid-template-columns: repeat(15, 32px);
+            grid-template-rows: repeat(15, 32px);
+            gap: 0;
+            padding: 10px;
+            background: #d4a054;
+            border: 3px solid #8b6914;
+            border-radius: 8px;
+            box-shadow: var(--shadow);
+        }
+
+        /* ── Board wrapper (Gomoku scroll) ── */
+        .board-wrapper {
+            overflow-x: auto;
+            max-width: 100%;
+            margin: 0 auto;
+            width: fit-content;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: thin;
+            scrollbar-color: var(--cell) var(--surface);
+        }
+
+        .board-wrapper::-webkit-scrollbar {
+            height: 8px;
+        }
+
+        .board-wrapper::-webkit-scrollbar-track {
+            background: var(--surface);
+            border-radius: 0 0 var(--radius) var(--radius);
+        }
+
+        .board-wrapper::-webkit-scrollbar-thumb {
+            background: var(--cell);
+            border-radius: 4px;
+        }
+
+        .board-wrapper::-webkit-scrollbar-thumb:hover {
+            background: var(--cell-hover);
+        }
+
+        /* ── Cells ── */
+        .cell {
+            background: var(--cell);
+            border-radius: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            transition: background 0.15s, transform 0.15s, box-shadow 0.15s;
+            position: relative;
+        }
+
+        /* TTT cells */
+        .ttt-board .cell {
+            width: clamp(80px, 18vw, 120px);
+            height: clamp(80px, 18vw, 120px);
+            font-size: clamp(2rem, 7vw, 3.2rem);
+        }
+
+        /* Gomoku cells — intersections with grid lines through center */
+        .gomoku-board .cell {
+            width: 32px;
+            height: 32px;
+            font-size: 1.1rem;
+            border-radius: 0;
+            background:
+                linear-gradient(#8b6914, #8b6914) center / 100% 1px no-repeat,
+                linear-gradient(#8b6914, #8b6914) center / 1px 100% no-repeat;
+            transition: background-color 0.15s;
+        }
+        .gomoku-board .cell:not(.taken):hover {
+            background-color: rgba(139, 105, 20, 0.17);
+            transform: none;
+        }
+        .gomoku-board .cell:not(.taken):active {
+            transform: none;
+            background-color: rgba(139, 105, 20, 0.28);
+        }
+        .gomoku-board .cell.taken {
+            cursor: default;
+        }
+        /* Override base cell win animation for gomoku — glow the stone instead */
+        .gomoku-board .cell.win {
+            animation: none;
+            background-color: transparent;
+            z-index: 3;
+        }
+        .gomoku-board .cell.win .gomoku-stone {
+            animation: gomokuWinPulse 0.7s ease-in-out infinite alternate;
+        }
+        @keyframes gomokuWinPulse {
+            from { box-shadow: 0 0 8px 6px var(--win-glow); }
+            to   { box-shadow: 0 0 20px 12px var(--win-glow); }
+        }
+        /* Override base cell pop animation for gomoku — pop the stone instead */
+        .gomoku-board .cell.pop {
+            animation: none;
+        }
+        .gomoku-board .cell.pop .gomoku-stone {
+            animation: stonePopIn 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        @keyframes stonePopIn {
+            from { transform: scale(0.2); opacity: 0; }
+            to   { transform: scale(1);   opacity: 1; }
+        }
+
+        .cell:not(.taken):hover {
+            background: var(--cell-hover);
+            transform: scale(1.04);
+        }
+
+        .cell:not(.taken):active {
+            transform: scale(0.96);
+        }
+
+        .cell.taken {
+            cursor: default;
+        }
+
+        .cell.x-mark {
+            color: var(--x-color);
+            text-shadow: 0 0 18px rgba(56, 189, 248, 0.5);
+        }
+
+        .cell.o-mark {
+            color: var(--o-color);
+            text-shadow: 0 0 18px rgba(244, 114, 182, 0.5);
+        }
+
+        /* ── Gomoku stone circles ── */
+        .gomoku-stone {
+            width: 28px; height: 28px;
+            border-radius: 50%;
+            position: relative;
+            z-index: 2;
+            flex-shrink: 0;
+        }
+        .gomoku-stone.black-stone {
+            background: radial-gradient(circle at 38% 35%, #555, #111 70%);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.4), inset 0 1px 2px rgba(255,255,255,0.12);
+        }
+        .gomoku-stone.white-stone {
+            background: radial-gradient(circle at 38% 35%, #fff, #cfcfcf 70%);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.22), inset 0 1px 2px rgba(255,255,255,0.7);
+            border: 1px solid #aaa;
+        }
+
+        /* Pop-in animation (used by TTT) */
+        .cell.pop {
+            animation: popIn 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        @keyframes popIn {
+            from { transform: scale(0.3); opacity: 0; }
+            to   { transform: scale(1);   opacity: 1; }
+        }
+
+        /* ── Winning cells ── */
+        .cell.win {
+            animation: winPulse 0.7s ease-in-out infinite alternate;
+            z-index: 2;
+        }
+
+        @keyframes winPulse {
+            from {
+                box-shadow: 0 0 12px 3px var(--win-glow);
+                background: var(--cell-hover);
+            }
+            to {
+                box-shadow: 0 0 28px 8px var(--win-glow);
+                background: #525e73;
+            }
+        }
+
+        /* ── Result banner ── */
+        .result-banner {
+            margin-top: 20px;
+            font-size: 1.3rem;
+            font-weight: 700;
+            min-height: 2em;
+            transition: all 0.3s;
+        }
+
+        .result-banner.win-x { color: var(--x-color); }
+        .result-banner.win-o { color: var(--o-color); }
+        .result-banner.draw   { color: var(--text-muted); }
+
+        .result-banner .emoji {
+            display: inline-block;
+            animation: bounceEmoji 0.5s ease-in-out;
+        }
+
+        @keyframes bounceEmoji {
+            0%, 100% { transform: translateY(0); }
+            40%      { transform: translateY(-12px); }
+            60%      { transform: translateY(-4px); }
+        }
+
+        /* ── Restart button ── */
+        .restart-btn {
+            margin-top: 18px;
+            padding: 12px 32px;
+            font-size: 1rem;
+            font-weight: 600;
+            color: #fff;
+            background: var(--accent);
+            border: none;
+            border-radius: 9999px;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+            letter-spacing: 0.01em;
+            box-shadow: 0 2px 12px rgba(129, 140, 248, 0.3);
+            font-family: inherit;
+        }
+
+        .restart-btn:hover {
+            background: #9d8cf8;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 20px rgba(129, 140, 248, 0.45);
+        }
+
+        .restart-btn:active {
+            transform: scale(0.97);
+        }
+
+        .restart-btn.hidden {
+            display: none;
+        }
+
+        /* ── Scoreboard ── */
+        .scoreboard {
+            display: flex;
+            justify-content: center;
+            gap: 32px;
+            margin-bottom: 20px;
+        }
+
+        .score-item {
+            text-align: center;
+            min-width: 64px;
+        }
+
+        .score-label {
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--text-muted);
+        }
+
+        .score-value {
+            font-size: 2rem;
+            font-weight: 800;
+        }
+
+        .score-value.x-score { color: var(--x-color); }
+        .score-value.o-score { color: var(--o-color); }
+        .score-value.draw-score { color: var(--text-muted); }
+
+        /* ── Chinese Chess board (intersection-based) ── */
+        .chess-board-outer {
+            position: relative;
+            display: inline-block;
+            background: #d4a054;
+            border: 3px solid #8b6914;
+            border-radius: 6px;
+            padding: 8px;
+            box-shadow: var(--shadow);
+        }
+
+        .chess-board-inner {
+            position: relative;
+            display: grid;
+            grid-template-columns: repeat(9, 48px);
+            grid-template-rows: repeat(5, 48px) 28px repeat(5, 48px);
+            background: #e8c878;
+        }
+
+        .chess-cell {
+            width: 48px;
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            position: relative;
+            background:
+                linear-gradient(#8b6914, #8b6914) center / 100% 1px no-repeat,
+                linear-gradient(#8b6914, #8b6914) center / 1px 100% no-repeat;
+            transition: background-color 0.15s;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .chess-cell:hover {
+            background-color: rgba(139, 105, 20, 0.15);
+        }
+
+        /* River row */
+        .chess-river {
+            grid-column: 1 / -1;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 54px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: #5c3d0e;
+            letter-spacing: 0.15em;
+            background: #e8c878;
+            pointer-events: none;
+        }
+
+        /* Palace diagonals — drawn from corner intersections toward palace center */
+        .chess-cell.palace-tl::after,
+        .chess-cell.palace-tr::after,
+        .chess-cell.palace-bl::after,
+        .chess-cell.palace-br::after {
+            content: '';
+            position: absolute;
+            pointer-events: none;
+            z-index: 0;
+            width: 68px; height: 1px;
+            background: #8b6914;
+            top: 50%;
+        }
+        .chess-cell.palace-tl::after {
+            left: 50%;
+            transform-origin: left center;
+            transform: translateY(-50%) rotate(45deg);
+        }
+        .chess-cell.palace-tr::after {
+            right: 50%;
+            transform-origin: right center;
+            transform: translateY(-50%) rotate(-45deg);
+        }
+        .chess-cell.palace-bl::after {
+            left: 50%;
+            transform-origin: left center;
+            transform: translateY(-50%) rotate(-45deg);
+        }
+        .chess-cell.palace-br::after {
+            right: 50%;
+            transform-origin: right center;
+            transform: translateY(-50%) rotate(45deg);
+        }
+
+        /* Chess piece styling */
+        .chess-piece {
+            width: 38px; height: 38px;
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.2rem; font-weight: 800;
+            z-index: 3; position: relative;
+            border: 2px solid #8b6914;
+            background: #f5deb3; color: #333;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            transition: transform 0.12s, box-shadow 0.12s;
+            line-height: 1;
+        }
+        .chess-piece.red-piece {
+            color: #c0392b; border-color: #922b21; background: #fdebd0;
+        }
+        .chess-piece.black-piece {
+            color: #111; border-color: #222; background: #e8dcc8;
+        }
+
+        /* Selected piece glow */
+        .chess-cell.selected .chess-piece {
+            transform: scale(1.14);
+            box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.75), 0 3px 10px rgba(0,0,0,0.4);
+        }
+
+        /* Valid-move dot */
+        .chess-cell.valid-move::before {
+            content: '';
+            position: absolute;
+            width: 14px; height: 14px;
+            border-radius: 50%;
+            background: rgba(56, 189, 248, 0.55);
+            z-index: 2; pointer-events: none;
+        }
+
+        /* Valid-move ring when there is an enemy piece to capture */
+        .chess-cell.valid-move.capture-move::before {
+            content: '';
+            position: absolute;
+            width: 42px; height: 42px;
+            border-radius: 50%;
+            background: rgba(244, 114, 182, 0.18);
+            border: 3px solid rgba(244, 114, 182, 0.55);
+            z-index: 2; pointer-events: none;
+        }
+
+        /* Last-move highlight */
+        .chess-cell.last-move { background-color: rgba(129, 140, 248, 0.2); }
+
+        /* Chess board scrolling */
+        .chess-scroll {
+            overflow-x: auto;
+            max-width: 100%;
+            margin: 0 auto;
+            width: fit-content;
+            border-radius: 8px;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: thin;
+            scrollbar-color: var(--cell) var(--surface);
+        }
+        .chess-scroll::-webkit-scrollbar { height: 8px; }
+        .chess-scroll::-webkit-scrollbar-track { background: var(--surface); border-radius: 0 0 8px 8px; }
+        .chess-scroll::-webkit-scrollbar-thumb { background: var(--cell); border-radius: 4px; }
+        .chess-scroll::-webkit-scrollbar-thumb:hover { background: var(--cell-hover); }
+
+        /* Chess turn indicator */
+        .turn-indicator .player-label.active-red {
+            border-color: #c0392b; color: #c0392b;
+            box-shadow: 0 0 20px rgba(192, 57, 43, 0.25);
+        }
+        .turn-indicator .player-label.active-black {
+            border-color: #555; color: #ccc;
+            box-shadow: 0 0 20px rgba(150, 150, 150, 0.25);
+        }
+
+        /* ── Responsive ── */
+        @media (max-width: 600px) {
+            body { padding-top: 16px; }
+            h1 { font-size: 1.8rem; }
+            .tab-btn { padding: 8px 20px; font-size: 0.9rem; }
+            .tab-bar { gap: 6px; margin-bottom: 14px; }
+            .mode-btn { padding: 8px 20px; font-size: 0.9rem; }
+            .mode-selector { gap: 6px; margin-bottom: 10px; }
+            .lobby-section { padding: 18px; }
+            .scoreboard { gap: 20px; }
+            .score-value { font-size: 1.5rem; }
+            .restart-btn { padding: 10px 24px; font-size: 0.9rem; }
+
+            /* TTT responsive */
+            .ttt-board { gap: 6px; padding: 8px; }
+            .ttt-board .cell {
+                width: clamp(70px, 22vw, 90px);
+                height: clamp(70px, 22vw, 90px);
+                font-size: clamp(1.6rem, 8vw, 2.4rem);
+                border-radius: 10px;
+            }
+
+            /* Gomoku responsive — smaller cells, still scrollable if needed */
+            .gomoku-board {
+                grid-template-columns: repeat(15, 26px);
+                grid-template-rows: repeat(15, 26px);
+                gap: 0;
+                padding: 8px;
+            }
+            .gomoku-board .cell {
+                width: 26px;
+                height: 26px;
+                font-size: 0.9rem;
+                border-radius: 0;
+            }
+            .gomoku-stone {
+                width: 22px; height: 22px;
+            }
+
+            /* Chess responsive */
+            .chess-board-inner {
+                grid-template-columns: repeat(9, 36px);
+                grid-template-rows: repeat(5, 36px) 22px repeat(5, 36px);
+            }
+            .chess-cell { width: 36px; height: 36px; }
+            .chess-piece { width: 30px; height: 30px; font-size: 1rem; border-width: 1.5px; }
+            .chess-river { font-size: 0.65rem; padding: 0 36px; }
+            .chess-cell.palace-tl::after,
+            .chess-cell.palace-tr::after,
+            .chess-cell.palace-bl::after,
+            .chess-cell.palace-br::after { width: 52px; }
+        }
+
+        @media (max-width: 400px) {
+            .gomoku-board {
+                grid-template-columns: repeat(15, 23px);
+                grid-template-rows: repeat(15, 23px);
+                gap: 0;
+                padding: 6px;
+            }
+            .gomoku-board .cell {
+                width: 23px;
+                height: 23px;
+                font-size: 0.8rem;
+                border-radius: 0;
+            }
+            .gomoku-stone {
+                width: 19px; height: 19px;
+            }
+
+            /* Chess responsive — even smaller */
+            .chess-board-inner {
+                grid-template-columns: repeat(9, 30px);
+                grid-template-rows: repeat(5, 30px) 18px repeat(5, 30px);
+            }
+            .chess-cell { width: 30px; height: 30px; }
+            .chess-piece { width: 25px; height: 25px; font-size: 0.85rem; border-width: 1.5px; }
+            .chess-river { font-size: 0.58rem; padding: 0 24px; }
+            .chess-cell.palace-tl::after,
+            .chess-cell.palace-tr::after,
+            .chess-cell.palace-bl::after,
+            .chess-cell.palace-br::after { width: 44px; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <!--              MODE SELECTOR                              -->
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <div class="mode-selector">
+        <button class="mode-btn active" id="mode-local">本地对战</button>
+        <button class="mode-btn" id="mode-online">联机对战</button>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <!--              ONLINE STATUS BAR                          -->
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <div class="online-status hidden" id="online-status">
+        <span class="status-dot disconnected" id="status-dot"></span>
+        <span id="status-text">未连接</span>
+        <span>房间: <span class="status-room-id" id="status-room-id">—</span></span>
+        <span>你是: <strong id="status-side">—</strong></span>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <!--              LOBBY PANEL (online mode)                  -->
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <div class="lobby-panel hidden" id="lobby-panel">
+        <div class="lobby-section" id="create-section">
+            <h3>创建房间</h3>
+            <label for="create-game-select">选择游戏</label>
+            <select id="create-game-select">
+                <option value="tictactoe">井字棋</option>
+                <option value="gomoku">五子棋</option>
+                <option value="chess">中国象棋</option>
+            </select>
+            <button class="lobby-btn" id="btn-create-room">创建房间</button>
+        </div>
+        <div class="lobby-section" id="join-section">
+            <h3>加入房间</h3>
+            <label for="room-id-input">输入房间 ID</label>
+            <input type="text" id="room-id-input" placeholder="例如: ABCD" maxlength="10" autocomplete="off" />
+            <button class="lobby-btn" id="btn-join-room" disabled>加入房间</button>
+        </div>
+        <div class="lobby-section" id="server-section">
+            <h3>服务器地址</h3>
+            <input type="text" id="server-url-input" value="wss://game-server-ewm7.onrender.com" placeholder="wss://game-server-ewm7.onrender.com" />
+        </div>
+        <div class="lobby-section hidden" id="ready-section">
+            <h3 id="ready-title">等待中</h3>
+            <p id="ready-status-text" style="text-align:center;color:var(--text-muted);margin-bottom:12px;"></p>
+            <button class="lobby-btn" id="btn-ready">准备</button>
+        </div>
+        <button class="lobby-btn danger" id="btn-leave-room" style="display:none;">离开房间</button>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <!--              TAB BAR (local mode only)                  -->
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <div class="tab-bar" id="tab-bar">
+        <button class="tab-btn active" id="tab-ttt" data-game="tictactoe">井字棋</button>
+        <button class="tab-btn" id="tab-gmk" data-game="gomoku">五子棋</button>
+        <button class="tab-btn" id="tab-chs" data-game="chess">中国象棋</button>
+    </div>
+
+    <h1 id="gameTitle">井字棋 — Tic-Tac-Toe</h1>
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <!--              Tic-Tac-Toe                                 -->
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <div class="game-panel" id="panel-ttt">
+        <div class="scoreboard">
+            <div class="score-item">
+                <div class="score-label">Player X</div>
+                <div class="score-value x-score" id="scoreX-ttt">0</div>
+            </div>
+            <div class="score-item">
+                <div class="score-label">Draws</div>
+                <div class="score-value draw-score" id="scoreDraw-ttt">0</div>
+            </div>
+            <div class="score-item">
+                <div class="score-label">Player O</div>
+                <div class="score-value o-score" id="scoreO-ttt">0</div>
+            </div>
+        </div>
+
+        <div class="turn-indicator" id="turnIndicator-ttt">
+            <span class="player-label active-x" id="labelX-ttt">X</span>
+            <span class="arrow">&#8594;</span>
+            <span class="player-label" id="labelO-ttt">O</span>
+        </div>
+
+        <div class="board ttt-board" id="board-ttt"></div>
+
+        <div class="result-banner" id="result-ttt"></div>
+
+        <button class="restart-btn" id="restart-ttt">&#8635; Restart</button>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <!--              Gomoku                                      -->
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <div class="game-panel hidden" id="panel-gmk">
+        <div class="scoreboard">
+            <div class="score-item">
+                <div class="score-label">Black (X)</div>
+                <div class="score-value x-score" id="scoreX-gmk">0</div>
+            </div>
+            <div class="score-item">
+                <div class="score-label">Draws</div>
+                <div class="score-value draw-score" id="scoreDraw-gmk">0</div>
+            </div>
+            <div class="score-item">
+                <div class="score-label">White (O)</div>
+                <div class="score-value o-score" id="scoreO-gmk">0</div>
+            </div>
+        </div>
+
+        <div class="turn-indicator" id="turnIndicator-gmk">
+            <span class="player-label active-x" id="labelX-gmk">X</span>
+            <span class="arrow">&#8594;</span>
+            <span class="player-label" id="labelO-gmk">O</span>
+        </div>
+
+        <div class="board-wrapper">
+            <div class="board gomoku-board" id="board-gmk"></div>
+        </div>
+
+        <div class="result-banner" id="result-gmk"></div>
+
+        <button class="restart-btn" id="restart-gmk">&#8635; Restart</button>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <!--              Chinese Chess                               -->
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <div class="game-panel hidden" id="panel-chs">
+        <div class="scoreboard">
+            <div class="score-item">
+                <div class="score-label">Red (红方)</div>
+                <div class="score-value x-score" id="scoreRed-chs">0</div>
+            </div>
+            <div class="score-item">
+                <div class="score-label">Draws</div>
+                <div class="score-value draw-score" id="scoreDraw-chs">0</div>
+            </div>
+            <div class="score-item">
+                <div class="score-label">Black (黑方)</div>
+                <div class="score-value o-score" id="scoreBlack-chs">0</div>
+            </div>
+        </div>
+
+        <div class="turn-indicator" id="turnIndicator-chs">
+            <span class="player-label active-red" id="labelRed-chs">红方</span>
+            <span class="arrow">&#8594;</span>
+            <span class="player-label" id="labelBlack-chs">黑方</span>
+        </div>
+
+        <div class="chess-scroll">
+            <div class="chess-board-outer">
+                <div class="chess-board-inner" id="board-chs"></div>
+            </div>
+        </div>
+
+        <div class="result-banner" id="result-chs"></div>
+
+        <button class="restart-btn" id="restart-chs">&#8635; Restart</button>
+    </div>
+</div>
+
+<script>
+(function () {
+    // ╔════════════════════════════════════════════════════════╗
+    // ║           GLOBAL STATE & ONLINE MANAGER                ║
+    // ╚════════════════════════════════════════════════════════╝
+
+    const OnlineState = {
+        mode: 'local',       // 'local' | 'online'
+        ws: null,
+        connected: false,
+        roomId: null,
+        mySide: null,        // 'X'|'O' for TTT/Gomoku, 'red'|'black' for Chess
+        myTurn: false,
+        currentGame: 'tictactoe',
+        gameStarted: false
+    };
+
+    // Registry for game controller APIs (populated by each game IIFE)
+    const gameControllers = {};
+
+    // Game ID mapping for panels
+    const GAME_PANEL_ID = {
+        tictactoe: 'ttt',
+        gomoku: 'gmk',
+        chess: 'chs'
+    };
+
+    const GAME_TITLES = {
+        tictactoe: '井字棋 — Tic-Tac-Toe',
+        gomoku: '五子棋 — Gomoku',
+        chess: '中国象棋 — Chinese Chess'
+    };
+
+    const GAME_TO_SERVER = {
+        tictactoe: 'ttt',
+        gomoku: 'gomoku',
+        chess: 'chess'
+    };
+
+    const SERVER_TO_GAME = {
+        ttt: 'tictactoe',
+        gomoku: 'gomoku',
+        chess: 'chess'
+    };
+
+    // ═══════════════════════════════════════════════════════
+    //              UI HELPERS
+    // ═══════════════════════════════════════════════════════
+
+    function updateStatusUI(connected, text, roomId, side) {
+        const dot = document.getElementById('status-dot');
+        const statusText = document.getElementById('status-text');
+        const statusRoomId = document.getElementById('status-room-id');
+        const statusSide = document.getElementById('status-side');
+
+        dot.className = 'status-dot ' + (connected ? 'connected' : 'disconnected');
+        statusText.textContent = text || (connected ? '已连接' : '未连接');
+        statusRoomId.textContent = roomId || '—';
+        if (side !== undefined) {
+            statusSide.textContent = side || '—';
+        }
+    }
+
+    function showLobby() {
+        const lobby = document.getElementById('lobby-panel');
+        const statusBar = document.getElementById('online-status');
+        const tabBar = document.getElementById('tab-bar');
+        const leaveBtn = document.getElementById('btn-leave-room');
+
+        lobby.classList.remove('hidden');
+        statusBar.classList.add('hidden');
+        tabBar.classList.add('hidden');
+        leaveBtn.style.display = 'none';
+
+        // Hide all game panels
+        document.querySelectorAll('.game-panel').forEach(p => p.classList.add('hidden'));
+        // Remove board-locked from all panels
+        document.querySelectorAll('.game-panel').forEach(p => p.classList.remove('board-locked'));
+        // Hide all restart buttons
+        document.querySelectorAll('.restart-btn').forEach(b => b.classList.remove('hidden'));
+
+        document.getElementById('gameTitle').textContent = '联机对战';
+    }
+
+    function hideLobbyShowGame(game) {
+        const lobby = document.getElementById('lobby-panel');
+        const statusBar = document.getElementById('online-status');
+        const tabBar = document.getElementById('tab-bar');
+        const leaveBtn = document.getElementById('btn-leave-room');
+
+        lobby.classList.add('hidden');
+        statusBar.classList.remove('hidden');
+        tabBar.classList.add('hidden');
+        leaveBtn.style.display = 'block';
+
+        document.getElementById('gameTitle').textContent = GAME_TITLES[game];
+
+        // Show only the selected game panel
+        document.querySelectorAll('.game-panel').forEach(p => {
+            p.classList.add('hidden');
+            p.classList.remove('board-locked');
+        });
+        const panel = document.getElementById('panel-' + GAME_PANEL_ID[game]);
+        if (panel) panel.classList.remove('hidden');
+
+        // Hide restart buttons in online mode
+        document.querySelectorAll('.restart-btn').forEach(b => b.classList.add('hidden'));
+    }
+
+    function setBoardLocked(game, locked) {
+        const panelId = 'panel-' + GAME_PANEL_ID[game];
+        const panel = document.getElementById(panelId);
+        if (panel) {
+            panel.classList.toggle('board-locked', locked);
+        }
+    }
+
+    function resetOnlineAndShowLobby() {
+        if (OnlineState.ws) {
+            OnlineState.ws.close();
+            OnlineState.ws = null;
+        }
+        OnlineState.connected = false;
+        OnlineState.roomId = null;
+        OnlineState.mySide = null;
+        OnlineState.myTurn = false;
+        OnlineState.gameStarted = false;
+        updateStatusUI(false, '未连接');
+        showLobby();
+    }
+
+    function showReadySection(code, game) {
+        document.getElementById('create-section').classList.add('hidden');
+        document.getElementById('join-section').classList.add('hidden');
+        document.getElementById('server-section').classList.add('hidden');
+        document.getElementById('ready-section').classList.remove('hidden');
+        document.getElementById('btn-leave-room').style.display = 'block';
+        document.getElementById('online-status').classList.remove('hidden');
+        document.getElementById('tab-bar').classList.add('hidden');
+
+        const displayGame = SERVER_TO_GAME[game] || game;
+        document.getElementById('ready-title').textContent = '房间: ' + code;
+        document.getElementById('ready-status-text').textContent = '游戏: ' + (GAME_TITLES[displayGame] || game) + ' — 等待双方准备...';
+        document.getElementById('btn-ready').disabled = false;
+
+        document.querySelectorAll('.game-panel').forEach(p => p.classList.add('hidden'));
+        document.querySelectorAll('.game-panel').forEach(p => p.classList.remove('board-locked'));
+        document.querySelectorAll('.restart-btn').forEach(b => b.classList.add('hidden'));
+
+        document.getElementById('gameTitle').textContent = '联机对战';
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //              ONLINE MANAGER (WebSocket)
+    // ═══════════════════════════════════════════════════════
+
+    function handleServerMessage(msg) {
+        switch (msg.type) {
+            case 'room_created':
+                OnlineState.roomId = msg.code;
+                OnlineState.currentGame = SERVER_TO_GAME[msg.game] || msg.game;
+                OnlineState.gameStarted = false;
+                OnlineState.mySide = null;
+                updateStatusUI(true, '等待对手加入...', msg.code);
+                showReadySection(msg.code, OnlineState.currentGame);
+                break;
+
+            case 'joined':
+                OnlineState.currentGame = SERVER_TO_GAME[msg.game] || msg.game;
+                OnlineState.gameStarted = false;
+                OnlineState.mySide = null;
+                updateStatusUI(true, '已加入房间', OnlineState.roomId);
+                showReadySection(OnlineState.roomId, OnlineState.currentGame);
+                break;
+
+            case 'player_ready':
+                // Server tells us someone is ready (may be us or opponent)
+                updateStatusUI(true, '等待对手准备...', OnlineState.roomId);
+                document.getElementById('ready-status-text').textContent = '对手已准备，等待你准备...';
+                break;
+
+            case 'game_start':
+                OnlineState.mySide = msg.your_side;
+                OnlineState.myTurn = msg.your_turn;
+                OnlineState.gameStarted = true;
+                updateStatusUI(true, '对战中', OnlineState.roomId,
+                    msg.your_side === 'X' ? 'X' : msg.your_side);
+                hideLobbyShowGame(OnlineState.currentGame);
+                setBoardLocked(OnlineState.currentGame, !msg.your_turn);
+
+                // Reset game boards for online mode
+                if (gameControllers.tictactoe) gameControllers.tictactoe.restartOnline();
+                if (gameControllers.gomoku) gameControllers.gomoku.restartOnline();
+                if (gameControllers.chess) gameControllers.chess.restartOnline();
+                break;
+
+            case 'opponent_move': {
+                const gc = gameControllers[OnlineState.currentGame];
+                if (gc && gc.applyRemoteMove) {
+                    gc.applyRemoteMove(msg.position);
+                }
+                OnlineState.myTurn = true;
+                setBoardLocked(OnlineState.currentGame, false);
+                // Check if opponent's move caused a win (detected locally)
+                if (gc && gc.checkWinAfterRemote) {
+                    gc.checkWinAfterRemote();
+                }
+                break;
+            }
+
+            case 'opponent_restart':
+                if (gameControllers[OnlineState.currentGame]) {
+                    gameControllers[OnlineState.currentGame].restartOnline();
+                }
+                break;
+
+            case 'opponent_disconnected':
+                alert('对手已断开连接');
+                if (OnlineState.currentGame) {
+                    setBoardLocked(OnlineState.currentGame, true);
+                    const resultEl = document.getElementById('result-' + GAME_PANEL_ID[OnlineState.currentGame]);
+                    if (resultEl) {
+                        resultEl.innerHTML = '对手已断开连接';
+                        resultEl.className = 'result-banner draw';
+                    }
+                }
+                OnlineState.myTurn = false;
+                updateStatusUI(true, '对手已断开', OnlineState.roomId);
+                break;
+
+            case 'error':
+                alert('服务器错误: ' + msg.message);
+                break;
+
+            case 'room_closed':
+                alert('房间已关闭: ' + (msg.reason || '未知原因'));
+                resetOnlineAndShowLobby();
+                break;
+
+            default:
+                console.log('Unknown message type:', msg.type, msg);
+        }
+    }
+
+    const OnlineManager = {
+        connect() {
+            if (OnlineState.ws && OnlineState.ws.readyState === WebSocket.OPEN) {
+                return; // already connected
+            }
+            updateStatusUI(false, '连接中...');
+            try {
+                const serverUrl = document.getElementById('server-url-input').value.trim() || 'wss://game-server-ewm7.onrender.com';
+                const ws = new WebSocket(serverUrl);
+                OnlineState.ws = ws;
+
+                ws.onopen = () => {
+                    OnlineState.connected = true;
+                    updateStatusUI(true, '已连接');
+                };
+
+                ws.onclose = () => {
+                    OnlineState.connected = false;
+                    OnlineState.myTurn = false;
+                    updateStatusUI(false, '连接断开');
+                    if (OnlineState.currentGame) {
+                        setBoardLocked(OnlineState.currentGame, true);
+                    }
+                };
+
+                ws.onerror = () => {
+                    OnlineState.connected = false;
+                    updateStatusUI(false, '连接失败');
+                };
+
+                ws.onmessage = (event) => {
+                    try {
+                        const msg = JSON.parse(event.data);
+                        handleServerMessage(msg);
+                    } catch (e) {
+                        console.error('Failed to parse server message:', event.data, e);
+                    }
+                };
+            } catch (e) {
+                const serverUrl = document.getElementById('server-url-input').value.trim() || 'wss://game-server-ewm7.onrender.com';
+                alert('无法连接到服务器 (' + serverUrl + ')。请确保 WebSocket 服务器正在运行。');
+                updateStatusUI(false, '连接失败');
+            }
+        },
+
+        send(msg) {
+            if (OnlineState.ws && OnlineState.ws.readyState === WebSocket.OPEN) {
+                OnlineState.ws.send(JSON.stringify(msg));
+            } else {
+                console.warn('WebSocket not connected, cannot send:', msg);
+            }
+        },
+
+        createRoom(game) {
+            OnlineState.currentGame = game;
+            this.connect();
+            const serverGame = GAME_TO_SERVER[game];
+            const trySend = () => {
+                if (OnlineState.ws && OnlineState.ws.readyState === WebSocket.OPEN) {
+                    this.send({ type: 'create_room', game: serverGame });
+                } else if (OnlineState.ws && OnlineState.ws.readyState === WebSocket.CONNECTING) {
+                    setTimeout(trySend, 100);
+                } else {
+                    alert('无法连接到服务器，请稍后重试。');
+                }
+            };
+            trySend();
+        },
+
+        joinRoom(roomId) {
+            const code = roomId.toUpperCase();
+            OnlineState.roomId = code;
+            OnlineState.currentGame = null; // unknown until server sends 'joined'
+            this.connect();
+            const trySend = () => {
+                if (OnlineState.ws && OnlineState.ws.readyState === WebSocket.OPEN) {
+                    this.send({ type: 'join_room', code: code });
+                } else if (OnlineState.ws && OnlineState.ws.readyState === WebSocket.CONNECTING) {
+                    setTimeout(trySend, 100);
+                } else {
+                    alert('无法连接到服务器，请稍后重试。');
+                }
+            };
+            trySend();
+        },
+
+        sendReady() {
+            this.send({ type: 'ready' });
+        },
+
+        sendMove(game, position) {
+            const serverGame = GAME_TO_SERVER[game];
+            this.send({ type: 'move', game: serverGame, position: position });
+        },
+
+        sendRestart() {
+            this.send({ type: 'restart' });
+        },
+
+        leaveRoom() {
+            if (OnlineState.ws) {
+                OnlineState.ws.close();
+            }
+            OnlineState.ws = null;
+            OnlineState.connected = false;
+            OnlineState.roomId = null;
+            OnlineState.mySide = null;
+            OnlineState.myTurn = false;
+            OnlineState.gameStarted = false;
+            updateStatusUI(false, '未连接');
+            showLobby();
+        }
+    };
+
+    // ╔════════════════════════════════════════════════════════╗
+    // ║                MODE SWITCHING                           ║
+    // ╚════════════════════════════════════════════════════════╝
+
+    const modeLocal = document.getElementById('mode-local');
+    const modeOnline = document.getElementById('mode-online');
+    const tabBar = document.getElementById('tab-bar');
+
+    function switchMode(mode) {
+        OnlineState.mode = mode;
+        modeLocal.classList.toggle('active', mode === 'local');
+        modeOnline.classList.toggle('active', mode === 'online');
+
+        if (mode === 'local') {
+            // Disconnect and clean up online state
+            if (OnlineState.ws) {
+                OnlineState.ws.close();
+                OnlineState.ws = null;
+            }
+            OnlineState.connected = false;
+            OnlineState.roomId = null;
+            OnlineState.mySide = null;
+            OnlineState.myTurn = false;
+            OnlineState.gameStarted = false;
+
+            document.getElementById('lobby-panel').classList.add('hidden');
+            document.getElementById('online-status').classList.add('hidden');
+            document.getElementById('btn-leave-room').style.display = 'none';
+            tabBar.classList.remove('hidden');
+
+            // Remove board-locked from all panels
+            document.querySelectorAll('.game-panel').forEach(p => p.classList.remove('board-locked'));
+            // Show restart buttons
+            document.querySelectorAll('.restart-btn').forEach(b => b.classList.remove('hidden'));
+
+            // Reset all games
+            if (gameControllers.tictactoe) gameControllers.tictactoe.restart();
+            if (gameControllers.gomoku) gameControllers.gomoku.restart();
+            if (gameControllers.chess) gameControllers.chess.restart();
+
+            // Show current tab's game
+            switchGameTabs(OnlineState.currentGame);
+        } else {
+            // Online mode
+            tabBar.classList.add('hidden');
+            document.querySelectorAll('.restart-btn').forEach(b => b.classList.add('hidden'));
+            showLobby();
+        }
+    }
+
+    modeLocal.addEventListener('click', () => switchMode('local'));
+    modeOnline.addEventListener('click', () => switchMode('online'));
+
+    // ╔════════════════════════════════════════════════════════╗
+    // ║                TAB SWITCHING (local mode)               ║
+    // ╚════════════════════════════════════════════════════════╝
+
+    const tabTtt = document.getElementById('tab-ttt');
+    const tabGmk = document.getElementById('tab-gmk');
+    const tabChs = document.getElementById('tab-chs');
+    const panelTtt = document.getElementById('panel-ttt');
+    const panelGmk = document.getElementById('panel-gmk');
+    const panelChs = document.getElementById('panel-chs');
+    const gameTitle = document.getElementById('gameTitle');
+
+    function switchGameTabs(game) {
+        if (OnlineState.mode === 'online') return; // Tab switching disabled in online mode
+
+        OnlineState.currentGame = game;
+        tabTtt.classList.toggle('active', game === 'tictactoe');
+        tabGmk.classList.toggle('active', game === 'gomoku');
+        tabChs.classList.toggle('active', game === 'chess');
+        panelTtt.classList.toggle('hidden', game !== 'tictactoe');
+        panelGmk.classList.toggle('hidden', game !== 'gomoku');
+        panelChs.classList.toggle('hidden', game !== 'chess');
+        gameTitle.textContent = GAME_TITLES[game];
+    }
+
+    tabTtt.addEventListener('click', () => switchGameTabs('tictactoe'));
+    tabGmk.addEventListener('click', () => switchGameTabs('gomoku'));
+    tabChs.addEventListener('click', () => switchGameTabs('chess'));
+
+    // ╔════════════════════════════════════════════════════════╗
+    // ║              TIC-TAC-TOE GAME                          ║
+    // ╚════════════════════════════════════════════════════════╝
+
+    (function initTTT() {
+        const WINNING_COMBOS = [
+            [0, 1, 2], [3, 4, 5], [6, 7, 8], // rows
+            [0, 3, 6], [1, 4, 7], [2, 5, 8], // cols
+            [0, 4, 8], [2, 4, 6]              // diagonals
+        ];
+
+        let board = Array(9).fill(null);
+        let currentPlayer = 'X';
+        let gameOver = false;
+        let winningCombo = null;
+        let scoreX = 0;
+        let scoreO = 0;
+        let scoreDraw = 0;
+        let boardLocked = false;
+
+        const boardEl = document.getElementById('board-ttt');
+        const resultBanner = document.getElementById('result-ttt');
+        const restartBtn = document.getElementById('restart-ttt');
+        const labelX = document.getElementById('labelX-ttt');
+        const labelO = document.getElementById('labelO-ttt');
+        const scoreXEl = document.getElementById('scoreX-ttt');
+        const scoreOEl = document.getElementById('scoreO-ttt');
+        const scoreDrawEl = document.getElementById('scoreDraw-ttt');
+
+        function createBoard() {
+            boardEl.innerHTML = '';
+            for (let i = 0; i < 9; i++) {
+                const cell = document.createElement('div');
+                cell.classList.add('cell');
+                cell.dataset.index = i;
+                cell.addEventListener('click', () => handleClick(i, cell));
+                boardEl.appendChild(cell);
+            }
+        }
+
+        function getCellEl(index) {
+            return boardEl.querySelector(`[data-index="${index}"]`);
+        }
+
+        function updateTurnUI() {
+            if (OnlineState.mode === 'online') {
+                // In online mode, highlight based on myTurn
+                const isMyTurn = OnlineState.myTurn && !gameOver;
+                const myIsX = OnlineState.mySide === 'X';
+                labelX.classList.toggle('active-x', isMyTurn && myIsX);
+                labelO.classList.toggle('active-o', isMyTurn && !myIsX);
+                if (gameOver || !OnlineState.myTurn) {
+                    if (!isMyTurn || gameOver) {
+                        labelX.classList.remove('active-x');
+                        labelO.classList.remove('active-o');
+                    }
+                }
+                // Show "你的回合" or "对手回合"
+                if (gameOver) {
+                    labelX.classList.remove('active-x');
+                    labelO.classList.remove('active-o');
+                }
+                return;
+            }
+
+            labelX.classList.toggle('active-x', currentPlayer === 'X' && !gameOver);
+            labelO.classList.toggle('active-o', currentPlayer === 'O' && !gameOver);
+            if (gameOver) {
+                labelX.classList.remove('active-x');
+                labelO.classList.remove('active-o');
+            }
+        }
+
+        function updateScoreUI() {
+            scoreXEl.textContent = scoreX;
+            scoreOEl.textContent = scoreO;
+            scoreDrawEl.textContent = scoreDraw;
+        }
+
+        function checkWin() {
+            for (const combo of WINNING_COMBOS) {
+                const [a, b, c] = combo;
+                if (board[a] && board[a] === board[b] && board[a] === board[c]) {
+                    return combo;
+                }
+            }
+            return null;
+        }
+
+        function isBoardFull() {
+            return board.every(cell => cell !== null);
+        }
+
+        function highlightWin(combo) {
+            combo.forEach(index => {
+                const el = getCellEl(index);
+                if (el) el.classList.add('win');
+            });
+        }
+
+        function clearHighlights() {
+            boardEl.querySelectorAll('.cell.win').forEach(el => el.classList.remove('win'));
+        }
+
+        function handleClick(index, cellEl) {
+            if (gameOver) return;
+            if (board[index] !== null) return;
+            if (boardLocked) return;
+
+            // Online mode: send move to server
+            if (OnlineState.mode === 'online') {
+                if (!OnlineState.myTurn) return;
+                if (!OnlineState.connected) {
+                    alert('与服务器断开连接');
+                    return;
+                }
+                // Apply locally first, then send
+                const myPiece = OnlineState.mySide;
+                board[index] = myPiece;
+                cellEl.textContent = myPiece;
+                cellEl.classList.add('taken', myPiece === 'X' ? 'x-mark' : 'o-mark');
+                cellEl.classList.add('pop');
+                cellEl.addEventListener('animationend', () => cellEl.classList.remove('pop'), { once: true });
+
+                OnlineState.myTurn = false;
+                setBoardLocked('tictactoe', true);
+                updateTurnUI();
+                OnlineManager.sendMove('tictactoe', { index: index });
+
+                // Check if I won locally
+                winningCombo = checkWin();
+                if (winningCombo) {
+                    gameOver = true;
+                    highlightWin(winningCombo);
+                    resultBanner.innerHTML = '<span class="emoji">&#127942;</span> 你赢了！';
+                    resultBanner.className = 'result-banner ' + (myPiece === 'X' ? 'win-x' : 'win-o');
+                    if (myPiece === 'X') scoreX++; else scoreO++;
+                    updateScoreUI();
+                } else if (isBoardFull()) {
+                    gameOver = true;
+                    resultBanner.innerHTML = '<span class="emoji">&#129309;</span> 平局！';
+                    resultBanner.className = 'result-banner draw';
+                    scoreDraw++;
+                    updateScoreUI();
+                }
+                return;
+            }
+
+            // Local mode
+            board[index] = currentPlayer;
+            cellEl.textContent = currentPlayer;
+            cellEl.classList.add('taken', currentPlayer === 'X' ? 'x-mark' : 'o-mark');
+            cellEl.classList.add('pop');
+            cellEl.addEventListener('animationend', () => cellEl.classList.remove('pop'), { once: true });
+
+            winningCombo = checkWin();
+
+            if (winningCombo) {
+                gameOver = true;
+                highlightWin(winningCombo);
+                resultBanner.innerHTML = `<span class="emoji">&#127942;</span> Player ${currentPlayer} wins!`;
+                resultBanner.className = 'result-banner ' + (currentPlayer === 'X' ? 'win-x' : 'win-o');
+
+                if (currentPlayer === 'X') scoreX++;
+                else scoreO++;
+                updateScoreUI();
+                updateTurnUI();
+                return;
+            }
+
+            if (isBoardFull()) {
+                gameOver = true;
+                resultBanner.innerHTML = `<span class="emoji">&#129309;</span> It's a draw!`;
+                resultBanner.className = 'result-banner draw';
+                scoreDraw++;
+                updateScoreUI();
+                updateTurnUI();
+                return;
+            }
+
+            currentPlayer = currentPlayer === 'X' ? 'O' : 'X';
+            updateTurnUI();
+            resultBanner.textContent = '';
+            resultBanner.className = 'result-banner';
+        }
+
+        // ── Online API ──
+        function applyRemoteMove(position) {
+            // Derive opponent's piece from my side
+            const opponentPiece = OnlineState.mySide === 'X' ? 'O' : 'X';
+            const index = position.index;
+            board[index] = opponentPiece;
+            const cellEl = getCellEl(index);
+            if (cellEl) {
+                cellEl.textContent = opponentPiece;
+                cellEl.classList.add('taken', opponentPiece === 'X' ? 'x-mark' : 'o-mark');
+                cellEl.classList.add('pop');
+                cellEl.addEventListener('animationend', () => cellEl.classList.remove('pop'), { once: true });
+            }
+
+            updateTurnUI();
+        }
+
+        function checkWinAfterRemote() {
+            // Check if the opponent's move ended the game
+            winningCombo = checkWin();
+            if (winningCombo) {
+                gameOver = true;
+                highlightWin(winningCombo);
+                const opponentPiece = OnlineState.mySide === 'X' ? 'O' : 'X';
+                if (opponentPiece !== OnlineState.mySide) {
+                    resultBanner.innerHTML = '<span class="emoji">&#128546;</span> 你输了！';
+                    resultBanner.className = 'result-banner ' + (OnlineState.mySide === 'X' ? 'win-o' : 'win-x');
+                    if (OnlineState.mySide === 'X') scoreO++; else scoreX++;
+                }
+                updateScoreUI();
+            } else if (isBoardFull()) {
+                gameOver = true;
+                resultBanner.innerHTML = '<span class="emoji">&#129309;</span> 平局！';
+                resultBanner.className = 'result-banner draw';
+                scoreDraw++;
+                updateScoreUI();
+            }
+        }
+
+        function lockBoard() { boardLocked = true; }
+        function unlockBoard() { boardLocked = false; }
+
+        function restartOnline() {
+            board = Array(9).fill(null);
+            currentPlayer = 'X';
+            gameOver = false;
+            winningCombo = null;
+            boardLocked = false;
+
+            boardEl.querySelectorAll('.cell').forEach(cell => {
+                cell.textContent = '';
+                cell.classList.remove('taken', 'x-mark', 'o-mark', 'pop', 'win');
+            });
+
+            resultBanner.textContent = '';
+            resultBanner.className = 'result-banner';
+
+            OnlineState.myTurn = (OnlineState.mySide === 'X');
+            setBoardLocked('tictactoe', !OnlineState.myTurn);
+            updateTurnUI();
+        }
+
+        function restart() {
+            if (OnlineState.mode === 'online') {
+                OnlineManager.sendRestart();
+                restartOnline();
+                return;
+            }
+
+            board = Array(9).fill(null);
+            currentPlayer = 'X';
+            gameOver = false;
+            winningCombo = null;
+            boardLocked = false;
+
+            boardEl.querySelectorAll('.cell').forEach(cell => {
+                cell.textContent = '';
+                cell.classList.remove('taken', 'x-mark', 'o-mark', 'pop', 'win');
+            });
+
+            resultBanner.textContent = '';
+            resultBanner.className = 'result-banner';
+
+            currentPlayer = 'X';
+            updateTurnUI();
+        }
+
+        // Export controller
+        gameControllers.tictactoe = {
+            restart,
+            restartOnline,
+            applyRemoteMove,
+            checkWinAfterRemote,
+            lockBoard,
+            unlockBoard
+        };
+
+        createBoard();
+        updateTurnUI();
+        updateScoreUI();
+        restartBtn.addEventListener('click', restart);
+    })();
+
+    // ╔════════════════════════════════════════════════════════╗
+    // ║                GOMOKU GAME                             ║
+    // ╚════════════════════════════════════════════════════════╝
+
+    (function initGomoku() {
+        const SIZE = 15;
+
+        let board = Array(SIZE).fill(null).map(() => Array(SIZE).fill(null));
+        let currentPlayer = 'X';   // X = Black, goes first
+        let gameOver = false;
+        let winningCells = [];
+        let movesCount = 0;
+        let scoreX = 0;
+        let scoreO = 0;
+        let scoreDraw = 0;
+        let boardLocked = false;
+
+        const boardEl = document.getElementById('board-gmk');
+        const resultBanner = document.getElementById('result-gmk');
+        const restartBtn = document.getElementById('restart-gmk');
+        const labelX = document.getElementById('labelX-gmk');
+        const labelO = document.getElementById('labelO-gmk');
+        const scoreXEl = document.getElementById('scoreX-gmk');
+        const scoreOEl = document.getElementById('scoreO-gmk');
+        const scoreDrawEl = document.getElementById('scoreDraw-gmk');
+
+        // ── Build 15x15 board ──
+        function createBoard() {
+            boardEl.innerHTML = '';
+            for (let r = 0; r < SIZE; r++) {
+                for (let c = 0; c < SIZE; c++) {
+                    const cell = document.createElement('div');
+                    cell.classList.add('cell');
+                    cell.dataset.row = r;
+                    cell.dataset.col = c;
+                    cell.addEventListener('click', () => handleClick(r, c, cell));
+                    boardEl.appendChild(cell);
+                }
+            }
+        }
+
+        function getCellEl(row, col) {
+            return boardEl.querySelector(`[data-row="${row}"][data-col="${col}"]`);
+        }
+
+        function updateTurnUI() {
+            if (OnlineState.mode === 'online') {
+                const isMyTurn = OnlineState.myTurn && !gameOver;
+                const myIsX = OnlineState.mySide === 'X';
+                labelX.classList.toggle('active-x', isMyTurn && myIsX);
+                labelO.classList.toggle('active-o', isMyTurn && !myIsX);
+                if (gameOver) {
+                    labelX.classList.remove('active-x');
+                    labelO.classList.remove('active-o');
+                }
+                return;
+            }
+
+            labelX.classList.toggle('active-x', currentPlayer === 'X' && !gameOver);
+            labelO.classList.toggle('active-o', currentPlayer === 'O' && !gameOver);
+            if (gameOver) {
+                labelX.classList.remove('active-x');
+                labelO.classList.remove('active-o');
+            }
+        }
+
+        function updateScoreUI() {
+            scoreXEl.textContent = scoreX;
+            scoreOEl.textContent = scoreO;
+            scoreDrawEl.textContent = scoreDraw;
+        }
+
+        // ── Place a stone on the board (shared by local and remote) ──
+        function placeStone(row, col, player) {
+            board[row][col] = player;
+            movesCount++;
+            const cellEl = getCellEl(row, col);
+            if (!cellEl) return;
+            const stone = document.createElement('div');
+            stone.classList.add('gomoku-stone');
+            stone.classList.add(player === 'X' ? 'black-stone' : 'white-stone');
+            cellEl.appendChild(stone);
+            cellEl.classList.add('taken', 'pop');
+            cellEl.addEventListener('animationend', () => cellEl.classList.remove('pop'), { once: true });
+        }
+
+        // ── Check 5 in a row from last placed stone ──
+        function checkWin(row, col, player) {
+            const directions = [
+                [0, 1],   // horizontal
+                [1, 0],   // vertical
+                [1, 1],   // diagonal
+                [1, -1]   // diagonal
+            ];
+
+            for (const [dr, dc] of directions) {
+                const cells = [[row, col]];
+
+                for (let i = 1; i < 5; i++) {
+                    const r = row + dr * i;
+                    const c = col + dc * i;
+                    if (r >= 0 && r < SIZE && c >= 0 && c < SIZE && board[r][c] === player) {
+                        cells.push([r, c]);
+                    } else break;
+                }
+
+                for (let i = 1; i < 5; i++) {
+                    const r = row - dr * i;
+                    const c = col - dc * i;
+                    if (r >= 0 && r < SIZE && c >= 0 && c < SIZE && board[r][c] === player) {
+                        cells.unshift([r, c]);
+                    } else break;
+                }
+
+                if (cells.length >= 5) return cells;
+            }
+
+            return null;
+        }
+
+        function highlightWin(cells) {
+            cells.forEach(([r, c]) => {
+                const el = getCellEl(r, c);
+                if (el) el.classList.add('win');
+            });
+        }
+
+        function clearHighlights() {
+            boardEl.querySelectorAll('.cell.win').forEach(el => el.classList.remove('win'));
+        }
+
+        // ── Handle click ──
+        function handleClick(row, col, cellEl) {
+            if (gameOver) return;
+            if (board[row][col] !== null) return;
+            if (boardLocked) return;
+
+            if (OnlineState.mode === 'online') {
+                if (!OnlineState.myTurn) return;
+                if (!OnlineState.connected) {
+                    alert('与服务器断开连接');
+                    return;
+                }
+                const myPiece = OnlineState.mySide;
+                placeStone(row, col, myPiece);
+                OnlineState.myTurn = false;
+                setBoardLocked('gomoku', true);
+                updateTurnUI();
+                OnlineManager.sendMove('gomoku', { row: row, col: col });
+
+                // Check if I won locally
+                winningCells = checkWin(row, col, myPiece);
+                if (winningCells) {
+                    gameOver = true;
+                    highlightWin(winningCells);
+                    resultBanner.innerHTML = '<span class="emoji">&#127942;</span> 你赢了！';
+                    resultBanner.className = 'result-banner ' + (myPiece === 'X' ? 'win-x' : 'win-o');
+                    if (myPiece === 'X') scoreX++; else scoreO++;
+                    updateScoreUI();
+                } else if (movesCount >= SIZE * SIZE) {
+                    gameOver = true;
+                    resultBanner.innerHTML = '<span class="emoji">&#129309;</span> 平局！';
+                    resultBanner.className = 'result-banner draw';
+                    scoreDraw++;
+                    updateScoreUI();
+                }
+                return;
+            }
+
+            // Local mode
+            placeStone(row, col, currentPlayer);
+
+            winningCells = checkWin(row, col, currentPlayer);
+
+            if (winningCells) {
+                gameOver = true;
+                highlightWin(winningCells);
+                const playerName = currentPlayer === 'X' ? 'Black' : 'White';
+                resultBanner.innerHTML = `<span class="emoji">&#127942;</span> ${playerName} wins!`;
+                resultBanner.className = 'result-banner ' + (currentPlayer === 'X' ? 'win-x' : 'win-o');
+
+                if (currentPlayer === 'X') scoreX++;
+                else scoreO++;
+                updateScoreUI();
+                updateTurnUI();
+                return;
+            }
+
+            if (movesCount >= SIZE * SIZE) {
+                gameOver = true;
+                resultBanner.innerHTML = `<span class="emoji">&#129309;</span> It's a draw!`;
+                resultBanner.className = 'result-banner draw';
+                scoreDraw++;
+                updateScoreUI();
+                updateTurnUI();
+                return;
+            }
+
+            currentPlayer = currentPlayer === 'X' ? 'O' : 'X';
+            updateTurnUI();
+            resultBanner.textContent = '';
+            resultBanner.className = 'result-banner';
+        }
+
+        // ── Online API ──
+        function applyRemoteMove(position) {
+            const opponentPiece = OnlineState.mySide === 'X' ? 'O' : 'X';
+            const { row, col } = position;
+            placeStone(row, col, opponentPiece);
+            updateTurnUI();
+        }
+
+        function checkWinAfterRemote() {
+            const opponentPiece = OnlineState.mySide === 'X' ? 'O' : 'X';
+            // Find the last-placed stone position for win check
+            // (we'll check all positions of opponentPiece)
+            for (let r = 0; r < SIZE; r++) {
+                for (let c = 0; c < SIZE; c++) {
+                    if (board[r][c] === opponentPiece) {
+                        const wc = checkWin(r, c, opponentPiece);
+                        if (wc) {
+                            gameOver = true;
+                            winningCells = wc;
+                            highlightWin(wc);
+                            resultBanner.innerHTML = '<span class="emoji">&#128546;</span> 你输了！';
+                            resultBanner.className = 'result-banner ' + (OnlineState.mySide === 'X' ? 'win-o' : 'win-x');
+                            if (OnlineState.mySide === 'X') scoreO++; else scoreX++;
+                            updateScoreUI();
+                            return;
+                        }
+                    }
+                }
+            }
+            if (movesCount >= SIZE * SIZE) {
+                gameOver = true;
+                resultBanner.innerHTML = '<span class="emoji">&#129309;</span> 平局！';
+                resultBanner.className = 'result-banner draw';
+                scoreDraw++;
+                updateScoreUI();
+            }
+        }
+
+        function lockBoard() { boardLocked = true; }
+        function unlockBoard() { boardLocked = false; }
+
+        function restartOnline() {
+            board = Array(SIZE).fill(null).map(() => Array(SIZE).fill(null));
+            currentPlayer = 'X';
+            gameOver = false;
+            winningCells = [];
+            movesCount = 0;
+            boardLocked = false;
+
+            boardEl.querySelectorAll('.cell').forEach(cell => {
+                cell.innerHTML = '';
+                cell.classList.remove('taken', 'pop', 'win');
+            });
+
+            resultBanner.textContent = '';
+            resultBanner.className = 'result-banner';
+
+            OnlineState.myTurn = (OnlineState.mySide === 'X');
+            setBoardLocked('gomoku', !OnlineState.myTurn);
+            updateTurnUI();
+        }
+
+        function restart() {
+            if (OnlineState.mode === 'online') {
+                OnlineManager.sendRestart();
+                restartOnline();
+                return;
+            }
+
+            board = Array(SIZE).fill(null).map(() => Array(SIZE).fill(null));
+            currentPlayer = 'X';
+            gameOver = false;
+            winningCells = [];
+            movesCount = 0;
+            boardLocked = false;
+
+            boardEl.querySelectorAll('.cell').forEach(cell => {
+                cell.innerHTML = '';
+                cell.classList.remove('taken', 'pop', 'win');
+            });
+
+            resultBanner.textContent = '';
+            resultBanner.className = 'result-banner';
+
+            currentPlayer = 'X';
+            updateTurnUI();
+        }
+
+        // Export controller
+        gameControllers.gomoku = {
+            restart,
+            restartOnline,
+            applyRemoteMove,
+            checkWinAfterRemote,
+            lockBoard,
+            unlockBoard
+        };
+
+        createBoard();
+        updateTurnUI();
+        updateScoreUI();
+        restartBtn.addEventListener('click', restart);
+    })();
+
+    // ╔════════════════════════════════════════════════════════╗
+    // ║            CHINESE CHESS GAME                          ║
+    // ╚════════════════════════════════════════════════════════╝
+
+    (function initChess() {
+        const ROWS = 10;
+        const COLS = 9;
+
+        const PIECE_CHARS = {
+            red:   { king: '帅', advisor: '仕', elephant: '相', horse: '馬', rook: '車', cannon: '炮', pawn: '兵' },
+            black: { king: '将', advisor: '士', elephant: '象', horse: '馬', rook: '車', cannon: '砲', pawn: '卒' }
+        };
+
+        let board = [];
+        let currentSide = 'red';
+        let selectedRow = -1;
+        let selectedCol = -1;
+        let validMoves = [];
+        let gameOver = false;
+        let winner = null;
+        let scoreRed = 0;
+        let scoreBlack = 0;
+        let scoreDraw = 0;
+        let lastMoveFrom = null;
+        let lastMoveTo = null;
+        let boardLocked = false;
+
+        const boardEl = document.getElementById('board-chs');
+        const resultBanner = document.getElementById('result-chs');
+        const restartBtn = document.getElementById('restart-chs');
+        const labelRed = document.getElementById('labelRed-chs');
+        const labelBlack = document.getElementById('labelBlack-chs');
+        const scoreRedEl = document.getElementById('scoreRed-chs');
+        const scoreBlackEl = document.getElementById('scoreBlack-chs');
+        const scoreDrawEl = document.getElementById('scoreDraw-chs');
+
+        // ── Palace bounds ──
+        function inPalace(row, col, side) {
+            if (side === 'black') return row >= 0 && row <= 2 && col >= 3 && col <= 5;
+            return row >= 7 && row <= 9 && col >= 3 && col <= 5;
+        }
+
+        function inOwnHalf(row, side) {
+            if (side === 'black') return row >= 0 && row <= 4;
+            return row >= 5 && row <= 9;
+        }
+
+        function inBounds(r, c) {
+            return r >= 0 && r < ROWS && c >= 0 && c < COLS;
+        }
+
+        // ── Find king ──
+        function findKing(side) {
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    const p = board[r][c];
+                    if (p && p.type === 'king' && p.side === side) return { row: r, col: c };
+                }
+            }
+            return null;
+        }
+
+        // ── Flying general check ──
+        function kingsAreFacing(boardRef) {
+            const redKing = findKingInBoard(boardRef, 'red');
+            const blackKing = findKingInBoard(boardRef, 'black');
+            if (!redKing || !blackKing) return false;
+            if (redKing.col !== blackKing.col) return false;
+            const minR = Math.min(redKing.row, blackKing.row);
+            const maxR = Math.max(redKing.row, blackKing.row);
+            for (let r = minR + 1; r < maxR; r++) {
+                if (boardRef[r][redKing.col] !== null) return false;
+            }
+            return true;
+        }
+
+        function findKingInBoard(boardRef, side) {
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    const p = boardRef[r][c];
+                    if (p && p.type === 'king' && p.side === side) return { row: r, col: c };
+                }
+            }
+            return null;
+        }
+
+        // ── Is a square attacked by `attackerSide` on boardRef? ──
+        function isSquareAttacked(boardRef, row, col, attackerSide) {
+            const dirs = [[-1,0],[1,0],[0,-1],[0,1]];
+            for (const [dr, dc] of dirs) {
+                let r = row + dr, c = col + dc;
+                while (inBounds(r, c)) {
+                    const p = boardRef[r][c];
+                    if (p) {
+                        if (p.side === attackerSide && p.type === 'rook') return true;
+                        break;
+                    }
+                    r += dr; c += dc;
+                }
+            }
+
+            for (const [dr, dc] of dirs) {
+                let r = row + dr, c = col + dc;
+                let screenFound = false;
+                while (inBounds(r, c)) {
+                    const p = boardRef[r][c];
+                    if (!screenFound) {
+                        if (p) { screenFound = true; }
+                    } else {
+                        if (p) {
+                            if (p.side === attackerSide && p.type === 'cannon') return true;
+                            break;
+                        }
+                    }
+                    r += dr; c += dc;
+                }
+            }
+
+            const horseMoves = getRawHorseMoves(row, col, boardRef);
+            for (const [mr, mc] of horseMoves) {
+                const p = boardRef[mr][mc];
+                if (p && p.side === attackerSide && p.type === 'horse') return true;
+            }
+
+            const pawnDirs = attackerSide === 'red'
+                ? [[-1,0],[0,-1],[0,1]]
+                : [[1,0],[0,-1],[0,1]];
+            for (const [dr, dc] of pawnDirs) {
+                const pr = row - dr, pc = col - dc;
+                if (!inBounds(pr, pc)) continue;
+                const pp = boardRef[pr][pc];
+                if (!pp || pp.side !== attackerSide || pp.type !== 'pawn') continue;
+                if (dc === 0) return true;
+                const crossedRiver = attackerSide === 'red' ? pr <= 4 : pr >= 5;
+                if (crossedRiver) return true;
+            }
+
+            return false;
+        }
+
+        function getRawHorseMoves(r, c, boardRef) {
+            const moves = [];
+            const legBlocks = [
+                { dr: -1, dc:  0, moves: [[-2,-1],[-2,1]] },
+                { dr:  1, dc:  0, moves: [[ 2,-1],[ 2,1]] },
+                { dr:  0, dc: -1, moves: [[-1,-2],[ 1,-2]] },
+                { dr:  0, dc:  1, moves: [[-1, 2],[ 1, 2]] }
+            ];
+            for (const leg of legBlocks) {
+                const lr = r + leg.dr, lc = c + leg.dc;
+                if (!inBounds(lr, lc) || boardRef[lr][lc] !== null) continue;
+                for (const [mdr, mdc] of leg.moves) {
+                    const mr = r + mdr, mc = c + mdc;
+                    if (inBounds(mr, mc)) moves.push([mr, mc]);
+                }
+            }
+            return moves;
+        }
+
+        function getRawMoves(row, col, boardRef) {
+            const piece = boardRef[row][col];
+            if (!piece) return [];
+            const { type, side } = piece;
+            const moves = [];
+
+            switch (type) {
+                case 'king': {
+                    const dirs = [[-1,0],[1,0],[0,-1],[0,1]];
+                    for (const [dr, dc] of dirs) {
+                        const nr = row + dr, nc = col + dc;
+                        if (!inBounds(nr, nc)) continue;
+                        if (!inPalace(nr, nc, side)) continue;
+                        const target = boardRef[nr][nc];
+                        if (target && target.side === side) continue;
+                        moves.push([nr, nc]);
+                    }
+                    break;
+                }
+                case 'advisor': {
+                    const dirs = [[-1,-1],[-1,1],[1,-1],[1,1]];
+                    for (const [dr, dc] of dirs) {
+                        const nr = row + dr, nc = col + dc;
+                        if (!inBounds(nr, nc)) continue;
+                        if (!inPalace(nr, nc, side)) continue;
+                        const target = boardRef[nr][nc];
+                        if (target && target.side === side) continue;
+                        moves.push([nr, nc]);
+                    }
+                    break;
+                }
+                case 'elephant': {
+                    const elephantMoves = [
+                        { dr: -2, dc: -2, eyeDr: -1, eyeDc: -1 },
+                        { dr: -2, dc:  2, eyeDr: -1, eyeDc:  1 },
+                        { dr:  2, dc: -2, eyeDr:  1, eyeDc: -1 },
+                        { dr:  2, dc:  2, eyeDr:  1, eyeDc:  1 }
+                    ];
+                    for (const m of elephantMoves) {
+                        const nr = row + m.dr, nc = col + m.dc;
+                        if (!inBounds(nr, nc)) continue;
+                        if (!inOwnHalf(nr, side)) continue;
+                        const eyeR = row + m.eyeDr, eyeC = col + m.eyeDc;
+                        if (boardRef[eyeR][eyeC] !== null) continue;
+                        const target = boardRef[nr][nc];
+                        if (target && target.side === side) continue;
+                        moves.push([nr, nc]);
+                    }
+                    break;
+                }
+                case 'horse': {
+                    const raw = getRawHorseMoves(row, col, boardRef);
+                    for (const [nr, nc] of raw) {
+                        const target = boardRef[nr][nc];
+                        if (target && target.side === side) continue;
+                        moves.push([nr, nc]);
+                    }
+                    break;
+                }
+                case 'rook': {
+                    const dirs = [[-1,0],[1,0],[0,-1],[0,1]];
+                    for (const [dr, dc] of dirs) {
+                        let nr = row + dr, nc = col + dc;
+                        while (inBounds(nr, nc)) {
+                            const target = boardRef[nr][nc];
+                            if (target) {
+                                if (target.side !== side) moves.push([nr, nc]);
+                                break;
+                            }
+                            moves.push([nr, nc]);
+                            nr += dr; nc += dc;
+                        }
+                    }
+                    break;
+                }
+                case 'cannon': {
+                    const dirs = [[-1,0],[1,0],[0,-1],[0,1]];
+                    for (const [dr, dc] of dirs) {
+                        let nr = row + dr, nc = col + dc;
+                        while (inBounds(nr, nc)) {
+                            if (boardRef[nr][nc]) break;
+                            moves.push([nr, nc]);
+                            nr += dr; nc += dc;
+                        }
+                        if (!inBounds(nr, nc)) continue;
+                        nr += dr; nc += dc;
+                        while (inBounds(nr, nc)) {
+                            const target = boardRef[nr][nc];
+                            if (target) {
+                                if (target.side !== side) moves.push([nr, nc]);
+                                break;
+                            }
+                            nr += dr; nc += dc;
+                        }
+                    }
+                    break;
+                }
+                case 'pawn': {
+                    if (side === 'red') {
+                        const fwdR = row - 1;
+                        if (inBounds(fwdR, col)) {
+                            const t = boardRef[fwdR][col];
+                            if (!t || t.side !== side) moves.push([fwdR, col]);
+                        }
+                        if (row <= 4) {
+                            for (const dc of [-1, 1]) {
+                                const nc = col + dc;
+                                if (inBounds(row, nc)) {
+                                    const t = boardRef[row][nc];
+                                    if (!t || t.side !== side) moves.push([row, nc]);
+                                }
+                            }
+                        }
+                    } else {
+                        const fwdR = row + 1;
+                        if (inBounds(fwdR, col)) {
+                            const t = boardRef[fwdR][col];
+                            if (!t || t.side !== side) moves.push([fwdR, col]);
+                        }
+                        if (row >= 5) {
+                            for (const dc of [-1, 1]) {
+                                const nc = col + dc;
+                                if (inBounds(row, nc)) {
+                                    const t = boardRef[row][nc];
+                                    if (!t || t.side !== side) moves.push([row, nc]);
+                                }
+                            }
+                        }
+                    }
+                    break;
+                }
+            }
+            return moves;
+        }
+
+        function simulateMove(boardRef, fromR, fromC, toR, toC) {
+            const newBoard = boardRef.map(row => row.slice());
+            newBoard[toR][toC] = newBoard[fromR][fromC];
+            newBoard[fromR][fromC] = null;
+            return newBoard;
+        }
+
+        function isInCheck(boardRef, side) {
+            const king = findKingInBoard(boardRef, side);
+            if (!king) return true;
+            const opponent = side === 'red' ? 'black' : 'red';
+            if (isSquareAttacked(boardRef, king.row, king.col, opponent)) return true;
+            if (kingsAreFacing(boardRef)) return true;
+            return false;
+        }
+
+        function getLegalMoves(row, col) {
+            const piece = board[row][col];
+            if (!piece) return [];
+            const rawMoves = getRawMoves(row, col, board);
+            const legal = [];
+            for (const [nr, nc] of rawMoves) {
+                const sim = simulateMove(board, row, col, nr, nc);
+                if (!isInCheck(sim, piece.side)) {
+                    legal.push([nr, nc]);
+                }
+            }
+            return legal;
+        }
+
+        function hasLegalMoves(side) {
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    const p = board[r][c];
+                    if (p && p.side === side) {
+                        if (getLegalMoves(r, c).length > 0) return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        function initBoard() {
+            board = Array(ROWS).fill(null).map(() => Array(COLS).fill(null));
+
+            const blackBack = ['rook','horse','elephant','advisor','king','advisor','elephant','horse','rook'];
+            for (let c = 0; c < 9; c++) board[0][c] = { type: blackBack[c], side: 'black' };
+            board[2][1] = { type: 'cannon', side: 'black' };
+            board[2][7] = { type: 'cannon', side: 'black' };
+            for (let c = 0; c < 9; c += 2) board[3][c] = { type: 'pawn', side: 'black' };
+
+            const redBack = ['rook','horse','elephant','advisor','king','advisor','elephant','horse','rook'];
+            for (let c = 0; c < 9; c++) board[9][c] = { type: redBack[c], side: 'red' };
+            board[7][1] = { type: 'cannon', side: 'red' };
+            board[7][7] = { type: 'cannon', side: 'red' };
+            for (let c = 0; c < 9; c += 2) board[6][c] = { type: 'pawn', side: 'red' };
+
+            currentSide = 'red';
+            selectedRow = -1;
+            selectedCol = -1;
+            validMoves = [];
+            gameOver = false;
+            winner = null;
+            lastMoveFrom = null;
+            lastMoveTo = null;
+        }
+
+        function getPalaceClass(row, col) {
+            if (row === 0 && col === 3) return 'palace-tl';
+            if (row === 0 && col === 5) return 'palace-tr';
+            if (row === 2 && col === 3) return 'palace-bl';
+            if (row === 2 && col === 5) return 'palace-br';
+            if (row === 7 && col === 3) return 'palace-tl';
+            if (row === 7 && col === 5) return 'palace-tr';
+            if (row === 9 && col === 3) return 'palace-bl';
+            if (row === 9 && col === 5) return 'palace-br';
+            return '';
+        }
+
+        function renderBoard() {
+            boardEl.innerHTML = '';
+
+            for (let dr = 0; dr < ROWS; dr++) {
+                for (let c = 0; c < COLS; c++) {
+                    const cell = document.createElement('div');
+                    cell.classList.add('chess-cell');
+                    cell.classList.add('col-' + c);
+                    cell.classList.add('row-' + dr);
+
+                    const visualRow = dr < 5 ? dr + 1 : dr + 2;
+                    cell.style.gridRow = visualRow;
+                    cell.style.gridColumn = c + 1;
+
+                    cell.dataset.row = dr;
+                    cell.dataset.col = c;
+
+                    const pc = getPalaceClass(dr, c);
+                    if (pc) cell.classList.add(pc);
+
+                    const piece = board[dr][c];
+                    if (piece) {
+                        const pieceEl = document.createElement('div');
+                        pieceEl.classList.add('chess-piece');
+                        pieceEl.classList.add(piece.side === 'red' ? 'red-piece' : 'black-piece');
+                        pieceEl.textContent = PIECE_CHARS[piece.side][piece.type];
+                        cell.appendChild(pieceEl);
+                    }
+
+                    if (dr === selectedRow && c === selectedCol) {
+                        cell.classList.add('selected');
+                    }
+
+                    if (lastMoveFrom && dr === lastMoveFrom.row && c === lastMoveFrom.col) {
+                        cell.classList.add('last-move');
+                    }
+                    if (lastMoveTo && dr === lastMoveTo.row && c === lastMoveTo.col) {
+                        cell.classList.add('last-move');
+                    }
+
+                    const vm = validMoves.find(m => m[0] === dr && m[1] === c);
+                    if (vm) {
+                        cell.classList.add('valid-move');
+                        if (board[dr][c] && board[dr][c].side !== currentSide) {
+                            cell.classList.add('capture-move');
+                        }
+                    }
+
+                    cell.addEventListener('click', () => handleChessClick(dr, c));
+                    boardEl.appendChild(cell);
+                }
+            }
+
+            const river = document.createElement('div');
+            river.classList.add('chess-river');
+            river.style.gridRow = '6';
+            river.style.gridColumn = '1 / -1';
+            river.innerHTML = '<span>楚 河</span><span>汉 界</span>';
+            boardEl.appendChild(river);
+        }
+
+        function getCellEl(row, col) {
+            return boardEl.querySelector(`[data-row="${row}"][data-col="${col}"]`);
+        }
+
+        function updateTurnUI() {
+            if (OnlineState.mode === 'online') {
+                const isMyTurn = OnlineState.myTurn && !gameOver;
+                const myIsRed = OnlineState.mySide === 'red';
+                labelRed.classList.toggle('active-red', isMyTurn && myIsRed);
+                labelBlack.classList.toggle('active-black', isMyTurn && !myIsRed);
+                if (gameOver) {
+                    labelRed.classList.remove('active-red');
+                    labelBlack.classList.remove('active-black');
+                }
+                return;
+            }
+
+            labelRed.classList.toggle('active-red', currentSide === 'red' && !gameOver);
+            labelBlack.classList.toggle('active-black', currentSide === 'black' && !gameOver);
+            if (gameOver) {
+                labelRed.classList.remove('active-red');
+                labelBlack.classList.remove('active-black');
+            }
+        }
+
+        function updateScoreUI() {
+            scoreRedEl.textContent = scoreRed;
+            scoreBlackEl.textContent = scoreBlack;
+            scoreDrawEl.textContent = scoreDraw;
+        }
+
+        function checkGameEnd() {
+            const inCheck = isInCheck(board, currentSide);
+            const hasMoves = hasLegalMoves(currentSide);
+
+            if (!hasMoves) {
+                gameOver = true;
+                if (inCheck) {
+                    const prevSide = currentSide === 'red' ? 'black' : 'red';
+                    winner = prevSide;
+                    const winnerName = prevSide === 'red' ? 'Red (红方)' : 'Black (黑方)';
+                    resultBanner.innerHTML = `<span class="emoji">&#127942;</span> Checkmate! ${winnerName} wins!`;
+                    resultBanner.className = 'result-banner ' + (prevSide === 'red' ? 'win-x' : 'win-o');
+                    if (prevSide === 'red') scoreRed++;
+                    else scoreBlack++;
+                } else {
+                    resultBanner.innerHTML = `<span class="emoji">&#129309;</span> Stalemate — Draw!`;
+                    resultBanner.className = 'result-banner draw';
+                    scoreDraw++;
+                }
+                updateScoreUI();
+                updateTurnUI();
+                return true;
+            }
+
+            if (inCheck) {
+                const checkedName = currentSide === 'red' ? 'Red' : 'Black';
+                resultBanner.innerHTML = `<span>&#9888;</span> ${checkedName} is in check!`;
+                resultBanner.className = 'result-banner';
+            } else {
+                resultBanner.textContent = '';
+                resultBanner.className = 'result-banner';
+            }
+            return false;
+        }
+
+        function handleChessClick(row, col) {
+            if (gameOver) return;
+            if (boardLocked) return;
+
+            // Online mode: block interaction when not my turn
+            if (OnlineState.mode === 'online') {
+                if (!OnlineState.myTurn) return;
+                if (!OnlineState.connected) {
+                    alert('与服务器断开连接');
+                    return;
+                }
+            }
+
+            const piece = board[row][col];
+
+            if (selectedRow >= 0 && selectedCol >= 0) {
+                const vmIdx = validMoves.findIndex(m => m[0] === row && m[1] === col);
+                if (vmIdx >= 0) {
+                    // Execute move
+                    const fromRow = selectedRow;
+                    const fromCol = selectedCol;
+                    board[row][col] = board[selectedRow][selectedCol];
+                    board[selectedRow][selectedCol] = null;
+
+                    lastMoveFrom = { row: selectedRow, col: selectedCol };
+                    lastMoveTo = { row, col };
+
+                    selectedRow = -1;
+                    selectedCol = -1;
+                    validMoves = [];
+
+                    if (OnlineState.mode === 'online') {
+                        // In online mode, send move and switch sides (server handles result)
+                        const movedSide = (currentSide === 'red' ? 'black' : 'red');
+                        currentSide = currentSide === 'red' ? 'black' : 'red';
+                        renderBoard();
+                        updateTurnUI();
+                        OnlineState.myTurn = false;
+                        setBoardLocked('chess', true);
+                        OnlineManager.sendMove('chess', {
+                            fromRow: fromRow, fromCol: fromCol,
+                            toRow: row, toCol: col
+                        });
+                        // Check game end locally
+                        checkGameEnd();
+                        return;
+                    }
+
+                    // Local mode
+                    currentSide = currentSide === 'red' ? 'black' : 'red';
+                    renderBoard();
+                    updateTurnUI();
+                    checkGameEnd();
+                    return;
+                }
+
+                if (piece && piece.side === currentSide) {
+                    selectedRow = row;
+                    selectedCol = col;
+                    validMoves = getLegalMoves(row, col);
+                    renderBoard();
+                    return;
+                }
+
+                selectedRow = -1;
+                selectedCol = -1;
+                validMoves = [];
+                renderBoard();
+                return;
+            }
+
+            if (piece && piece.side === currentSide) {
+                selectedRow = row;
+                selectedCol = col;
+                validMoves = getLegalMoves(row, col);
+                renderBoard();
+            }
+        }
+
+        // ── Online API ──
+        function applyRemoteMove(position) {
+            const { fromRow, fromCol, toRow, toCol } = position;
+
+            board[toRow][toCol] = board[fromRow][fromCol];
+            board[fromRow][fromCol] = null;
+
+            lastMoveFrom = { row: fromRow, col: fromCol };
+            lastMoveTo = { row: toRow, col: toCol };
+
+            selectedRow = -1;
+            selectedCol = -1;
+            validMoves = [];
+
+            currentSide = currentSide === 'red' ? 'black' : 'red';
+
+            renderBoard();
+            updateTurnUI();
+        }
+
+        function checkWinAfterRemote() {
+            checkGameEnd();
+        }
+
+        function lockBoard() { boardLocked = true; }
+        function unlockBoard() { boardLocked = false; }
+
+        function restartOnline() {
+            initBoard();
+            boardLocked = false;
+            selectedRow = -1;
+            selectedCol = -1;
+            validMoves = [];
+            gameOver = false;
+            winner = null;
+            lastMoveFrom = null;
+            lastMoveTo = null;
+
+            renderBoard();
+
+            OnlineState.myTurn = (OnlineState.mySide === 'red');
+            currentSide = 'red';
+            setBoardLocked('chess', !OnlineState.myTurn);
+
+            updateTurnUI();
+            updateScoreUI();
+            resultBanner.textContent = '';
+            resultBanner.className = 'result-banner';
+        }
+
+        function restart() {
+            if (OnlineState.mode === 'online') {
+                OnlineManager.sendRestart();
+                restartOnline();
+                return;
+            }
+
+            initBoard();
+            boardLocked = false;
+            selectedRow = -1;
+            selectedCol = -1;
+            validMoves = [];
+            gameOver = false;
+            winner = null;
+            lastMoveFrom = null;
+            lastMoveTo = null;
+
+            renderBoard();
+
+            currentSide = 'red';
+
+            updateTurnUI();
+            updateScoreUI();
+            resultBanner.textContent = '';
+            resultBanner.className = 'result-banner';
+        }
+
+        // Export controller
+        gameControllers.chess = {
+            restart,
+            restartOnline,
+            applyRemoteMove,
+            checkWinAfterRemote,
+            lockBoard,
+            unlockBoard
+        };
+
+        initBoard();
+        renderBoard();
+        updateTurnUI();
+        updateScoreUI();
+        restartBtn.addEventListener('click', restart);
+    })();
+
+    // ╔════════════════════════════════════════════════════════╗
+    // ║            LOBBY EVENT WIRING                          ║
+    // ╚════════════════════════════════════════════════════════╝
+
+    const btnCreateRoom = document.getElementById('btn-create-room');
+    const btnJoinRoom = document.getElementById('btn-join-room');
+    const btnLeaveRoom = document.getElementById('btn-leave-room');
+    const btnReady = document.getElementById('btn-ready');
+    const roomIdInput = document.getElementById('room-id-input');
+    const createGameSelect = document.getElementById('create-game-select');
+
+    // Enable/disable join button based on room ID input
+    roomIdInput.addEventListener('input', () => {
+        btnJoinRoom.disabled = roomIdInput.value.trim() === '';
+    });
+
+    btnCreateRoom.addEventListener('click', () => {
+        const game = createGameSelect.value;
+        OnlineManager.createRoom(game);
+    });
+
+    btnJoinRoom.addEventListener('click', () => {
+        const roomId = roomIdInput.value.trim();
+        if (!roomId) return;
+        OnlineManager.joinRoom(roomId);
+    });
+
+    btnReady.addEventListener('click', () => {
+        btnReady.disabled = true;
+        btnReady.textContent = '已准备';
+        document.getElementById('ready-status-text').textContent = '已准备，等待对手确认...';
+        OnlineManager.sendReady();
+    });
+
+    btnLeaveRoom.addEventListener('click', () => {
+        OnlineManager.leaveRoom();
+        // Reset all game boards
+        if (gameControllers.tictactoe) gameControllers.tictactoe.restartOnline();
+        if (gameControllers.gomoku) gameControllers.gomoku.restartOnline();
+        if (gameControllers.chess) gameControllers.chess.restartOnline();
+    });
+
+})();
+</script>
+</body>
+</html>
