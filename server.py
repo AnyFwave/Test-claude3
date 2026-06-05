@@ -40,12 +40,15 @@ class GameServerConnection(ServerConnection):
                 process_request, process_response, server_header
             )
         except InvalidMessage:
-            # Any non-WebSocket HTTP request (HEAD, POST, bad GET, …)
-            # Reply 200 so health checks pass; the connection then closes.
+            # Any non-WebSocket HTTP request (HEAD, POST, bad GET, …).
+            # Write a 200 OK and close the transport so the response
+            # is flushed before conn_handler cleans up the connection.
             try:
-                self.transport.write(
+                transport = self.transport
+                transport.write(
                     b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"
                 )
+                transport.close()  # flush & close
             except Exception:
                 pass
             raise
