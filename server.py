@@ -25,7 +25,14 @@ from websockets.exceptions import InvalidMessage
 # Custom ServerConnection — handles HEAD requests (Render health checks)
 # ---------------------------------------------------------------------------
 class GameServerConnection(ServerConnection):
-    """Extended ServerConnection: tolerates HEAD requests for health checks."""
+    """Extended ServerConnection: tolerates non-WebSocket HTTP requests.
+
+    Render's load balancer sends HEAD requests for health checks, and
+    the websockets parser rejects any method other than GET.  We catch
+    every handshake-level InvalidMessage, send a minimal 200 OK, and
+    let the connection close gracefully — this keeps Render happy while
+    real browsers get the HTML page via `process_request`.
+    """
 
     async def handshake(self, process_request=None, process_response=None, server_header=None):
         try:
@@ -33,21 +40,14 @@ class GameServerConnection(ServerConnection):
                 process_request, process_response, server_header
             )
         except InvalidMessage:
-            cause_str = ""
+            # Any non-WebSocket HTTP request (HEAD, POST, bad GET, …)
+            # Reply 200 so health checks pass; the connection then closes.
             try:
-                exc = self.protocol.handshake_exc
-                if exc and exc.__cause__:
-                    cause_str = str(exc.__cause__)
+                self.transport.write(
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"
+                )
             except Exception:
                 pass
-            # Respond 200 to HEAD requests (Render health check, etc.)
-            if "HEAD" in cause_str or "unsupported HTTP method" in cause_str:
-                try:
-                    self.transport.write(
-                        b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"
-                    )
-                except Exception:
-                    pass
             raise
 
 
