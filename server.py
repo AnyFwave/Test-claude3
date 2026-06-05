@@ -1,10 +1,16 @@
 """
-WebSocket Game Server for Online Multiplayer
-============================================
-Uses asyncio + websockets to manage rooms, relay moves, and handle
-game lifecycle (create → join → ready → play → disconnect).
+Multiplayer Game Server — HTTP + WebSocket on a single port
+=============================================================
+Uses aiohttp to serve the game HTML page and handle WebSocket
+connections for real-time game play.
 
 Supported games: tic-tac-toe (ttt), gomoku, Chinese chess (chess)
+
+HTTP routes:
+  GET  /  → game HTML page        (HEAD auto-handled by aiohttp)
+  GET  /  → WebSocket upgrade     (game protocol)
+
+Start:  python server.py          (listens on $PORT or 8765)
 """
 
 import asyncio
@@ -17,62 +23,7 @@ import signal
 import string
 from typing import Optional
 
-import websockets
-from websockets.asyncio.server import ServerConnection
-from websockets.exceptions import InvalidMessage
-
-# ---------------------------------------------------------------------------
-# Custom ServerConnection — handles HEAD requests (Render health checks)
-# ---------------------------------------------------------------------------
-class GameServerConnection(ServerConnection):
-    """Extended ServerConnection: tolerates non-WebSocket HTTP requests.
-
-    Render's load balancer sends HEAD requests for health checks, and
-    the websockets parser rejects any method other than GET.  We catch
-    every handshake-level InvalidMessage, send a minimal 200 OK, and
-    let the connection close gracefully — this keeps Render happy while
-    real browsers get the HTML page via `process_request`.
-    """
-
-    async def handshake(self, process_request=None, process_response=None, server_header=None):
-        try:
-            return await super().handshake(
-                process_request, process_response, server_header
-            )
-        except InvalidMessage:
-            # Any non-WebSocket HTTP request (HEAD, POST, bad GET, …).
-            # Write a 200 OK and close the transport so the response
-            # is flushed before conn_handler cleans up the connection.
-            try:
-                transport = self.transport
-                transport.write(
-                    b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"
-                )
-                transport.close()  # flush & close
-            except Exception:
-                pass
-            raise
-
-
-# ---------------------------------------------------------------------------
-# Static file serving (HTTP GET / → game HTML page)
-# ---------------------------------------------------------------------------
-HTML_PATH = pathlib.Path(__file__).parent / "tictactoe.html"
-
-from websockets.http11 import Response as HTTPResponse  # noqa: E402
-
-
-async def process_request(connection, request):
-    """Handle HTTP GET / — return the game HTML; all else → WebSocket."""
-    if request.path == "/":
-        try:
-            html = HTML_PATH.read_text(encoding="utf-8")
-            headers = [("Content-Type", "text/html; charset=utf-8")]
-            return HTTPResponse(200, "OK", headers, html.encode("utf-8"))
-        except Exception:
-            logger.warning(f"Failed to serve {HTML_PATH}")
-    return None  # fall through → WebSocket handshake
-
+from aiohttp import WSCloseCode, web
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -87,15 +38,14 @@ logger = logging.getLogger("game-server")
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
+HTML_PATH = pathlib.Path(__file__).parent / "tictactoe.html"
 MAX_PLAYERS_PER_ROOM = 2
 CODE_LENGTH = 4
 
-# Which side the host (player 0) gets, per game type.
-# The joiner (player 1) automatically receives the opposite side.
 HOST_SIDES = {
-    "ttt": "X",       # X always goes first in TTT
-    "gomoku": "black",  # Black always goes first in Gomoku
-    "chess": "red",    # Red always moves first in Chinese chess
+    "ttt": "X",
+    "gomoku": "black",
+    "chess": "red",
 }
 
 JOINER_SIDES = {
@@ -109,7 +59,6 @@ JOINER_SIDES = {
 # Helper
 # ---------------------------------------------------------------------------
 def generate_room_code(length: int = CODE_LENGTH) -> str:
-    """Generate a random uppercase alphanumeric room code."""
     return "".join(random.choices(string.ascii_uppercase, k=length))
 
 
@@ -117,38 +66,28 @@ def generate_room_code(length: int = CODE_LENGTH) -> str:
 # Player
 # ---------------------------------------------------------------------------
 class Player:
-    """Represents one connected player inside a room."""
-
-    def __init__(self, player_id: int, websocket: ServerConnection):
-        self.player_id = player_id       # 0 = host, 1 = joiner
-        self.websocket = websocket
+    def __init__(self, player_id: int, ws: web.WebSocketResponse):
+        self.player_id = player_id
+        self.ws = ws
         self.ready = False
 
     async def send(self, data: dict) -> None:
-        """Send a JSON message to this player."""
         try:
-            await self.websocket.send(json.dumps(data))
-        except websockets.exceptions.ConnectionClosed:
-            logger.warning(f"Failed to send to player {self.player_id}: connection closed")
+            await self.ws.send_json(data)
+        except Exception:
+            logger.warning(f"Failed to send to player {self.player_id}")
 
 
 # ---------------------------------------------------------------------------
 # Room
 # ---------------------------------------------------------------------------
 class Room:
-    """A game room holding up to 2 players.
-
-    Lifecycle:
-      created → joined → (both ready) → playing → (both gone) → deleted
-    """
-
     def __init__(self, code: str, game: str):
         self.code = code
         self.game = game
-        self.players: dict[int, Player] = {}  # 0=host, 1=joiner
+        self.players: dict[int, Player] = {}
         self._started = False
 
-    # ---- properties -------------------------------------------------------
     @property
     def is_full(self) -> bool:
         return len(self.players) >= MAX_PLAYERS_PER_ROOM
@@ -168,60 +107,38 @@ class Room:
     def is_empty(self) -> bool:
         return len(self.players) == 0
 
-    @property
-    def host(self) -> Optional[Player]:
-        return self.players.get(0)
-
-    @property
-    def joiner(self) -> Optional[Player]:
-        return self.players.get(1)
-
-    # ---- player management ------------------------------------------------
-    def add_player(self, player_id: int, websocket: ServerConnection) -> Player:
-        """Create and register a new player. Raises ValueError if full."""
+    def add_player(self, player_id: int, ws: web.WebSocketResponse) -> Player:
         if self.is_full:
             raise ValueError(f"Room {self.code} is already full")
-        player = Player(player_id, websocket)
-        self.players[player_id] = player
-        logger.info(f"Room {self.code}: player {player_id} joined (game={self.game})")
-        return player
+        p = Player(player_id, ws)
+        self.players[player_id] = p
+        logger.info(f"Room {self.code}: player {player_id} joined ({self.game})")
+        return p
 
     def remove_player(self, player_id: int) -> None:
-        """Remove a player (e.g. on disconnect)."""
         self.players.pop(player_id, None)
         logger.info(f"Room {self.code}: player {player_id} left ({len(self.players)} remaining)")
 
-    # ---- game flow --------------------------------------------------------
     async def try_start(self) -> None:
-        """If both players are ready, broadcast game_start and begin."""
         if not self.all_ready or self._started:
             return
-
         self._started = True
-        logger.info(f"Room {self.code}: game starting (game={self.game})")
+        logger.info(f"Room {self.code}: game starting ({self.game})")
+        for pid in (0, 1):
+            p = self.players[pid]
+            await p.send({
+                "type": "game_start",
+                "your_turn": pid == 0,
+                "your_side": HOST_SIDES[self.game] if pid == 0 else JOINER_SIDES[self.game],
+            })
 
-        # Host (player 0) always gets the first turn
-        await self.host.send({
-            "type": "game_start",
-            "your_turn": True,
-            "your_side": HOST_SIDES[self.game],
-        })
-        await self.joiner.send({
-            "type": "game_start",
-            "your_turn": False,
-            "your_side": JOINER_SIDES[self.game],
-        })
-
-    async def broadcast(self, message: dict, exclude_id: Optional[int] = None) -> None:
-        """Send a message to every player in the room except exclude_id."""
-        for pid, player in self.players.items():
-            if pid != exclude_id:
-                await player.send(message)
+    async def broadcast(self, message: dict, exclude: Optional[int] = None) -> None:
+        for pid, p in self.players.items():
+            if pid != exclude:
+                await p.send(message)
 
     async def relay_move(self, from_id: int, game: str, position: dict) -> None:
-        """Relay a move from one player to the opponent."""
-        opponent_id = 1 - from_id  # 0→1, 1→0
-        opponent = self.players.get(opponent_id)
+        opponent = self.players.get(1 - from_id)
         if opponent:
             await opponent.send({
                 "type": "opponent_move",
@@ -230,9 +147,7 @@ class Room:
             })
 
     async def relay_restart(self, from_id: int) -> None:
-        """Relay a restart request to the opponent."""
-        opponent_id = 1 - from_id
-        opponent = self.players.get(opponent_id)
+        opponent = self.players.get(1 - from_id)
         if opponent:
             await opponent.send({"type": "opponent_restart"})
 
@@ -241,299 +156,202 @@ class Room:
 # Game Server
 # ---------------------------------------------------------------------------
 class GameServer:
-    """Top-level server: manages rooms and routes incoming messages."""
+    def __init__(self):
+        self.rooms: dict[str, Room] = {}
+        self._player_rooms: dict[int, str] = {}
 
-    def __init__(self, host: str = "0.0.0.0", port: int = 8765):
-        self.host = host
-        self.port = port
-        self.rooms: dict[str, Room] = {}          # code → Room
-        self._player_rooms: dict[int, str] = {}   # id(player) → room_code
+    async def handle_ws(self, request: web.Request) -> web.WebSocketResponse:
+        """Main WebSocket handler — one per connected player."""
+        ws = web.WebSocketResponse()
+        await ws.prepare(request)
+        addr = request.remote
+        logger.info(f"[connect] {addr}")
 
-    # ---- room management --------------------------------------------------
-    def _room_for_player(self, websocket: ServerConnection) -> Optional[Room]:
-        """Look up the room a player currently belongs to."""
-        code = self._player_rooms.get(id(websocket))
-        if code:
-            return self.rooms.get(code)
-        return None
+        try:
+            async for msg in ws:
+                if msg.type != web.WSMsgType.TEXT:
+                    continue
+                try:
+                    data = json.loads(msg.data)
+                except json.JSONDecodeError:
+                    await ws.send_json({"type": "error", "message": "Invalid JSON"})
+                    continue
+                await self._dispatch(ws, data)
+        except Exception:
+            pass  # client disconnected
+        finally:
+            await self._handle_disconnect(ws)
+            logger.info(f"[disconnect] {addr}")
+        return ws
 
-    def _find_room(self, code: str) -> Optional[Room]:
-        """Find a room by code (case-insensitive)."""
-        return self.rooms.get(code.upper())
+    async def _dispatch(self, ws: web.WebSocketResponse, data: dict) -> None:
+        msg_type = data.get("type")
+        if msg_type == "create_room":
+            await self._create(ws, data)
+        elif msg_type == "join_room":
+            await self._join(ws, data)
+        elif msg_type == "ready":
+            await self._ready(ws)
+        elif msg_type == "move":
+            await self._move(ws, data)
+        elif msg_type == "restart":
+            await self._restart(ws)
+        else:
+            await ws.send_json({"type": "error", "message": f"Unknown: {msg_type}"})
+
+    # ---- helpers -----------------------------------------------------------
+    def _room_for(self, ws: web.WebSocketResponse) -> Optional[Room]:
+        code = self._player_rooms.get(id(ws))
+        return self.rooms.get(code) if code else None
+
+    def _player_in_room(self, room: Room, ws: web.WebSocketResponse) -> Optional[Player]:
+        return next((p for p in room.players.values() if p.ws is ws), None)
 
     def _create_unique_code(self) -> str:
-        """Generate a code that does not collide with any existing room."""
         while True:
             code = generate_room_code()
             if code not in self.rooms:
                 return code
 
-    # ---- connection handler -----------------------------------------------
-    async def handle_connection(self, websocket: ServerConnection) -> None:
-        """Main entry point for every new WebSocket connection."""
-        addr = websocket.remote_address
-        logger.info(f"[connect] {addr}")
-
-        try:
-            async for raw in websocket:
-                try:
-                    data = json.loads(raw)
-                except json.JSONDecodeError:
-                    await self._send(websocket, {
-                        "type": "error",
-                        "message": "Invalid JSON",
-                    })
-                    continue
-
-                await self._dispatch(websocket, data)
-
-        except websockets.exceptions.ConnectionClosed:
-            pass  # normal disconnect
-        finally:
-            await self._handle_disconnect(websocket)
-            logger.info(f"[disconnect] {addr}")
-
-    # ---- message dispatcher -----------------------------------------------
-    async def _dispatch(self, websocket: ServerConnection, data: dict) -> None:
-        """Route an incoming JSON message to the appropriate handler."""
-        msg_type = data.get("type")
-
-        if msg_type == "create_room":
-            await self._handle_create(websocket, data)
-
-        elif msg_type == "join_room":
-            await self._handle_join(websocket, data)
-
-        elif msg_type == "ready":
-            await self._handle_ready(websocket)
-
-        elif msg_type == "move":
-            await self._handle_move(websocket, data)
-
-        elif msg_type == "restart":
-            await self._handle_restart(websocket)
-
-        else:
-            await self._send(websocket, {
-                "type": "error",
-                "message": f"Unknown message type: {msg_type}",
-            })
-
-    # ---- handlers ---------------------------------------------------------
-    async def _handle_create(self, websocket: ServerConnection, data: dict) -> None:
-        """Handle create_room: allocate a new room and register the player as host."""
+    # ---- message handlers --------------------------------------------------
+    async def _create(self, ws: web.WebSocketResponse, data: dict) -> None:
         game = data.get("game")
         if game not in HOST_SIDES:
-            await self._send(websocket, {
-                "type": "error",
-                "message": f"Unsupported game: {game}. Supported: ttt, gomoku, chess",
-            })
+            await ws.send_json({"type": "error", "message": f"Unsupported: {game}"})
             return
-
-        # Prevent a player from being in two rooms at once
-        if self._room_for_player(websocket):
-            await self._send(websocket, {
-                "type": "error",
-                "message": "You are already in a room",
-            })
+        if self._room_for(ws):
+            await ws.send_json({"type": "error", "message": "Already in a room"})
             return
 
         code = self._create_unique_code()
         room = Room(code, game)
-        room.add_player(0, websocket)
+        room.add_player(0, ws)
         self.rooms[code] = room
-        self._player_rooms[id(websocket)] = code
+        self._player_rooms[id(ws)] = code
+        logger.info(f"[create] room {code} ({game})")
+        await ws.send_json({"type": "room_created", "code": code, "game": game})
 
-        logger.info(f"[create] room {code} created by {websocket.remote_address} (game={game})")
-        await self._send(websocket, {
-            "type": "room_created",
-            "code": code,
-            "game": game,
-        })
-
-    async def _handle_join(self, websocket: ServerConnection, data: dict) -> None:
-        """Handle join_room: add the player to an existing room."""
+    async def _join(self, ws: web.WebSocketResponse, data: dict) -> None:
         code = data.get("code", "").upper()
-        room = self._find_room(code)
-
+        room = self.rooms.get(code)
         if room is None:
-            await self._send(websocket, {
-                "type": "error",
-                "message": f"Room '{code}' not found",
-            })
+            await ws.send_json({"type": "error", "message": f"Room '{code}' not found"})
             return
-
-        if self._room_for_player(websocket):
-            await self._send(websocket, {
-                "type": "error",
-                "message": "You are already in a room",
-            })
+        if self._room_for(ws):
+            await ws.send_json({"type": "error", "message": "Already in a room"})
             return
-
         if room.is_full:
-            await self._send(websocket, {
-                "type": "error",
-                "message": f"Room '{code}' is full",
-            })
+            await ws.send_json({"type": "error", "message": f"Room '{code}' is full"})
             return
 
-        room.add_player(1, websocket)
-        self._player_rooms[id(websocket)] = code
+        room.add_player(1, ws)
+        self._player_rooms[id(ws)] = code
+        logger.info(f"[join] room {code}")
+        await ws.send_json({"type": "joined", "game": room.game})
 
-        logger.info(f"[join] {websocket.remote_address} joined room {code}")
-        await self._send(websocket, {
-            "type": "joined",
-            "game": room.game,
-        })
-
-    async def _handle_ready(self, websocket: ServerConnection) -> None:
-        """Handle ready: mark the player as ready and try to start the game."""
-        room = self._room_for_player(websocket)
+    async def _ready(self, ws: web.WebSocketResponse) -> None:
+        room = self._room_for(ws)
         if room is None:
-            await self._send(websocket, {
-                "type": "error",
-                "message": "You are not in a room",
-            })
+            await ws.send_json({"type": "error", "message": "Not in a room"})
             return
-
-        player = next(
-            (p for p in room.players.values() if p.websocket is websocket), None
-        )
+        player = self._player_in_room(room, ws)
         if player is None:
             return
-
         player.ready = True
-        logger.info(f"Room {room.code}: player {player.player_id} is ready")
-
-        # Notify both players of readiness
-        await room.broadcast({
-            "type": "player_ready",
-            "player": player.player_id,
-        })
-
+        logger.info(f"Room {room.code}: player {player.player_id} ready")
+        await room.broadcast({"type": "player_ready", "player": player.player_id})
         await room.try_start()
 
-    async def _handle_move(self, websocket: ServerConnection, data: dict) -> None:
-        """Handle move: relay the move to the opponent."""
-        room = self._room_for_player(websocket)
+    async def _move(self, ws: web.WebSocketResponse, data: dict) -> None:
+        room = self._room_for(ws)
         if room is None:
-            await self._send(websocket, {
-                "type": "error",
-                "message": "You are not in a room",
-            })
+            await ws.send_json({"type": "error", "message": "Not in a room"})
             return
-
-        player = next(
-            (p for p in room.players.values() if p.websocket is websocket), None
-        )
+        player = self._player_in_room(room, ws)
         if player is None:
             return
-
         game = data.get("game", room.game)
         position = data.get("position", {})
         await room.relay_move(player.player_id, game, position)
 
-    async def _handle_restart(self, websocket: ServerConnection) -> None:
-        """Handle restart: relay the restart request to the opponent."""
-        room = self._room_for_player(websocket)
+    async def _restart(self, ws: web.WebSocketResponse) -> None:
+        room = self._room_for(ws)
         if room is None:
-            await self._send(websocket, {
-                "type": "error",
-                "message": "You are not in a room",
-            })
+            await ws.send_json({"type": "error", "message": "Not in a room"})
             return
-
-        # Reset room state so players can ready again
         room._started = False
         for p in room.players.values():
             p.ready = False
-
-        player = next(
-            (p for p in room.players.values() if p.websocket is websocket), None
-        )
+        player = self._player_in_room(room, ws)
         if player:
             await room.relay_restart(player.player_id)
 
-    async def _handle_disconnect(self, websocket: ServerConnection) -> None:
-        """Clean up when a player disconnects."""
-        room = self._room_for_player(websocket)
+    async def _handle_disconnect(self, ws: web.WebSocketResponse) -> None:
+        room = self._room_for(ws)
         if room is None:
             return
-
-        # Find which player disconnected
-        player = next(
-            (p for p in room.players.values() if p.websocket is websocket), None
-        )
+        player = self._player_in_room(room, ws)
         if player is None:
             return
-
         room.remove_player(player.player_id)
-        self._player_rooms.pop(id(websocket), None)
-
-        # Notify the remaining player
-        remaining = [p for p in room.players.values()]
-        if remaining:
-            await remaining[0].send({"type": "opponent_disconnected"})
-
-        # Auto-delete room when empty
+        self._player_rooms.pop(id(ws), None)
+        for p in room.players.values():
+            await p.send({"type": "opponent_disconnected"})
         if room.is_empty:
             del self.rooms[room.code]
             logger.info(f"Room {room.code}: deleted (empty)")
 
-    # ---- helpers ----------------------------------------------------------
-    @staticmethod
-    async def _send(websocket: ServerConnection, data: dict) -> None:
-        """Send a JSON message to a single websocket."""
-        try:
-            await websocket.send(json.dumps(data))
-        except websockets.exceptions.ConnectionClosed:
-            pass
 
-    # ---- lifecycle ---------------------------------------------------------
-    async def start(self) -> None:
-        """Start the server and serve forever."""
-        logger.info(f"Starting game server on {self.host}:{self.port}")
-        stop_future = asyncio.get_running_loop().create_future()
+# ---------------------------------------------------------------------------
+# HTTP handler — serve the game HTML page
+# ---------------------------------------------------------------------------
+async def serve_html(_request: web.Request) -> web.Response:
+    """Serve the game HTML page at GET /."""
+    html = HTML_PATH.read_text(encoding="utf-8")
+    return web.Response(text=html, content_type="text/html; charset=utf-8")
 
-        shutdown = lambda: self._set_stop(stop_future)
 
-        async with websockets.serve(
-            self.handle_connection, self.host, self.port,
-            process_request=process_request,
-            create_connection=GameServerConnection,
-        ):
-            logger.info("Server is ready — awaiting connections...")
-            await stop_future
+# ---------------------------------------------------------------------------
+# Application factory
+# ---------------------------------------------------------------------------
+def create_app() -> web.Application:
+    """Create and configure the aiohttp application."""
+    app = web.Application()
+    game = GameServer()
 
-    def _set_stop(self, future: asyncio.Future) -> None:
-        if not future.done():
-            future.set_result(None)
+    # WebSocket route must be registered BEFORE the catch-all GET route
+    # because aiohttp checks WebSocket upgrade header first.
+    app.router.add_get("/", game.handle_ws)
+
+    # For non-Upgrade GET requests, serve the HTML.
+    # We hook into the same route but with a fallback: if the WebSocket
+    # handler doesn't claim the request, aiohttp won't call it. We work
+    # around this by checking the upgrade header inside the handler.
+    # Actually, aiohttp dispatches WebSocket vs HTTP based on the return
+    # type of the handler. If it returns WebSocketResponse, upgrade.
+    # If it returns a regular Response, serve HTTP.
+    # Since handle_ws ALWAYS tries to upgrade, we need a separate
+    # strategy: serve HTML for requests without Upgrade headers.
+
+    # Simpler: use a middleware or a wrapper handler that checks headers.
+    async def root_handler(request: web.Request) -> web.StreamResponse:
+        if request.headers.get("upgrade", "").lower() == "websocket":
+            return await game.handle_ws(request)
+        return await serve_html(request)
+
+    app.router.add_get("/", root_handler)
+    return app
 
 
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
-async def main() -> None:
+def main() -> None:
     port = int(os.environ.get("PORT", "8765"))
-    server = GameServer(host="0.0.0.0", port=port)
-
-    # Attach graceful shutdown for SIGINT / SIGTERM
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        try:
-            loop.add_signal_handler(sig, lambda: None)
-        except NotImplementedError:
-            # Windows does not support add_signal_handler for SIGTERM
-            pass
-
-    # On Windows, use a simpler approach: catch KeyboardInterrupt
-    try:
-        await server.start()
-    except KeyboardInterrupt:
-        logger.info("Shutting down...")
-    finally:
-        logger.info("Server stopped.")
+    logger.info(f"Starting game server on 0.0.0.0:{port}")
+    app = create_app()
+    web.run_app(app, host="0.0.0.0", port=port, print=lambda _: None)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
