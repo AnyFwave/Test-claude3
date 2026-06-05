@@ -1305,7 +1305,7 @@
             }
             updateStatusUI(false, '连接中...');
             try {
-                const serverUrl = document.getElementById('server-url-input').value.trim() || 'wss://game-server-ewm7.onrender.com';
+                const serverUrl = document.getElementById('server-url-input').value.trim() || (location.protocol.startsWith('http') ? (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host : 'wss://game-server-ewm7.onrender.com');
                 const ws = new WebSocket(serverUrl);
                 OnlineState.ws = ws;
 
@@ -1337,7 +1337,7 @@
                     }
                 };
             } catch (e) {
-                const serverUrl = document.getElementById('server-url-input').value.trim() || 'wss://game-server-ewm7.onrender.com';
+                const serverUrl = document.getElementById('server-url-input').value.trim() || (location.protocol.startsWith('http') ? (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host : 'wss://game-server-ewm7.onrender.com');
                 alert('无法连接到服务器 (' + serverUrl + ')。请确保 WebSocket 服务器正在运行。');
                 updateStatusUI(false, '连接失败');
             }

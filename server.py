@@ -11,6 +11,7 @@ import asyncio
 import json
 import logging
 import os
+import pathlib
 import random
 import signal
 import string
@@ -18,6 +19,26 @@ from typing import Optional
 
 import websockets
 from websockets.asyncio.server import ServerConnection
+
+# ---------------------------------------------------------------------------
+# Static file serving (HTTP GET / → game HTML page)
+# ---------------------------------------------------------------------------
+HTML_PATH = pathlib.Path(__file__).parent / "tictactoe.html"
+
+async def process_request(connection, request) -> Optional[tuple]:
+    """Handle HTTP GET / — return the game HTML; all else → WebSocket."""
+    if request.path == "/":
+        try:
+            html = HTML_PATH.read_text(encoding="utf-8")
+            # websockets 12+ Response: (status, headers, body)
+            headers = [
+                ("Content-Type", "text/html; charset=utf-8"),
+            ]
+            body = html.encode("utf-8")
+            return (200, headers, body)
+        except Exception:
+            logger.warning(f"Failed to serve {HTML_PATH}")
+    return None  # fall through → WebSocket handshake
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -442,7 +463,7 @@ class GameServer:
 
         shutdown = lambda: self._set_stop(stop_future)
 
-        async with websockets.serve(self.handle_connection, self.host, self.port):
+        async with websockets.serve(self.handle_connection, self.host, self.port, process_request=process_request):
             logger.info("Server is ready — awaiting connections...")
             await stop_future
 
