@@ -19,6 +19,37 @@ from typing import Optional
 
 import websockets
 from websockets.asyncio.server import ServerConnection
+from websockets.exceptions import InvalidMessage
+
+# ---------------------------------------------------------------------------
+# Custom ServerConnection — handles HEAD requests (Render health checks)
+# ---------------------------------------------------------------------------
+class GameServerConnection(ServerConnection):
+    """Extended ServerConnection: tolerates HEAD requests for health checks."""
+
+    async def handshake(self, process_request=None, process_response=None, server_header=None):
+        try:
+            return await super().handshake(
+                process_request, process_response, server_header
+            )
+        except InvalidMessage:
+            cause_str = ""
+            try:
+                exc = self.protocol.handshake_exc
+                if exc and exc.__cause__:
+                    cause_str = str(exc.__cause__)
+            except Exception:
+                pass
+            # Respond 200 to HEAD requests (Render health check, etc.)
+            if "HEAD" in cause_str or "unsupported HTTP method" in cause_str:
+                try:
+                    self.transport.write(
+                        b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"
+                    )
+                except Exception:
+                    pass
+            raise
+
 
 # ---------------------------------------------------------------------------
 # Static file serving (HTTP GET / → game HTML page)
@@ -463,7 +494,11 @@ class GameServer:
 
         shutdown = lambda: self._set_stop(stop_future)
 
-        async with websockets.serve(self.handle_connection, self.host, self.port, process_request=process_request):
+        async with websockets.serve(
+            self.handle_connection, self.host, self.port,
+            process_request=process_request,
+            create_connection=GameServerConnection,
+        ):
             logger.info("Server is ready — awaiting connections...")
             await stop_future
 
