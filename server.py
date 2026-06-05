@@ -319,21 +319,10 @@ def create_app() -> web.Application:
     app = web.Application()
     game = GameServer()
 
-    # WebSocket route must be registered BEFORE the catch-all GET route
-    # because aiohttp checks WebSocket upgrade header first.
-    app.router.add_get("/", game.handle_ws)
-
-    # For non-Upgrade GET requests, serve the HTML.
-    # We hook into the same route but with a fallback: if the WebSocket
-    # handler doesn't claim the request, aiohttp won't call it. We work
-    # around this by checking the upgrade header inside the handler.
-    # Actually, aiohttp dispatches WebSocket vs HTTP based on the return
-    # type of the handler. If it returns WebSocketResponse, upgrade.
-    # If it returns a regular Response, serve HTTP.
-    # Since handle_ws ALWAYS tries to upgrade, we need a separate
-    # strategy: serve HTML for requests without Upgrade headers.
-
-    # Simpler: use a middleware or a wrapper handler that checks headers.
+    # Single GET / route that dispatches:
+    #   Upgrade: websocket → game WebSocket handler
+    #   Otherwise          → HTML page
+    # aiohttp auto-handles HEAD for health checks.
     async def root_handler(request: web.Request) -> web.StreamResponse:
         if request.headers.get("upgrade", "").lower() == "websocket":
             return await game.handle_ws(request)
